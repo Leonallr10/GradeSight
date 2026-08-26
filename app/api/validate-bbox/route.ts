@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { partitionByBbox } from '@/lib/bboxCheck'
-import { repairBlocksWithGemini } from '@/lib/gemini'
 import type { ExtractedBlock, PageImage } from '@/lib/types'
 
 export const maxDuration = 300
@@ -56,13 +55,23 @@ export async function POST(req: Request) {
     const pages = body.pages as PageImage[]
 
     const { valid, invalid } = partitionByBbox(blocks)
-    const repaired = invalid.length > 0 ? await repairBlocksWithGemini(invalid, pages) : []
+    let repaired: ExtractedBlock[] = invalid
+
+    // Optional Gemini bbox repair only when key is present (extract stays HF-only)
+    if (invalid.length > 0 && process.env.GEMINI_API_KEY) {
+      try {
+        const { repairBlocksWithGemini } = await import('@/lib/gemini')
+        repaired = await repairBlocksWithGemini(invalid, pages)
+      } catch (err) {
+        console.warn('Gemini bbox repair skipped:', err)
+        repaired = invalid
+      }
+    }
 
     const byId = new Map<string, ExtractedBlock>()
     for (const b of valid) byId.set(b.id, b)
     for (const b of repaired) byId.set(b.id, b)
 
-    // Preserve original order
     const result = blocks.map((b) => byId.get(b.id) ?? b)
 
     return NextResponse.json({

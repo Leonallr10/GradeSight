@@ -2,16 +2,27 @@ import { InferenceClient } from '@huggingface/inference'
 import { parseExtractedBlocks } from './parseExtract'
 import type { DocumentRole, ExtractedBlock, PageImage } from './types'
 
-const EXTRACT_PROMPT = `You are extracting exam content from a document page image (CBSE / board-style).
+/** Default VL model that works on Hugging Face Inference Providers for most accounts.
+ *  Qwen2.5-VL often needs Hyperbolic (or similar) enabled in HF settings — if you
+ *  have that, set HF_QWEN_MODEL=Qwen/Qwen2.5-VL-7B-Instruct */
+const DEFAULT_VL_MODEL = 'meta-llama/Llama-4-Scout-17B-16E-Instruct'
 
-Extract EVERY distinct question or answer text block on this page.
-- Sub-parts are SEPARATE blocks: "19(a)", "19(b)", "20(b)(i)", "20(b)(ii)" each get their own entry.
-- Preserve FULL numbering — never drop digits ("19(a)" not "9(a)").
-- Keep printed order top→bottom.
-- For each block return: text, labelNumber (e.g. "19(a)", "20(b)(i)"), and bbox as [x, y, w, h] normalized 0–1 (top-left origin).
+const EXTRACT_PROMPT = `You extract structured blocks from an exam page image (any board / school / subject).
 
-Return ONLY a JSON array, no markdown:
-[{"text":"...","labelNumber":"19(a)","bbox":[0.1,0.2,0.8,0.15]}]
+Read ONLY what appears on this page. Do not invent questions, answers, numbers, or topics.
+
+Rules:
+- Emit one JSON object per distinct LEAF item (smallest answerable unit): each numbered item and each lettered / roman sub-part gets its own entry.
+- If sub-parts exist, do NOT also emit a parent entry that repeats the same child text.
+- If the paper offers an OR choice between branches, emit every leaf under each branch that is present on the page.
+- Copy labels exactly as printed (full digits and letters). Never truncate or guess a different number.
+- Keep visual top-to-bottom (then left-to-right) order.
+- labelNumber: the printed marker for that block, or omit if none is visible.
+- bbox: [x, y, w, h] with values normalized to 0–1 from the top-left of this page image.
+- text: the full wording of that block only.
+
+Return ONLY a JSON array (no markdown):
+[{"text":"<exact text from page>","labelNumber":"<printed label or omit>","bbox":[x,y,w,h]}]
 `
 
 function getClient() {
@@ -23,7 +34,7 @@ function getClient() {
 }
 
 function getModel() {
-  return process.env.HF_QWEN_MODEL || 'Qwen/Qwen2.5-VL-7B-Instruct'
+  return process.env.HF_QWEN_MODEL || DEFAULT_VL_MODEL
 }
 
 function stripDataUrl(imageBase64: string): { mime: string; data: string } {
@@ -32,6 +43,26 @@ function stripDataUrl(imageBase64: string): { mime: string; data: string } {
     return { mime: match[1], data: match[2] }
   }
   return { mime: 'image/png', data: imageBase64.replace(/^data:[^;]+;base64,/, '') }
+}
+
+function hfErrorMessage(err: unknown): string {
+  if (!err || typeof err !== 'object') return String(err)
+  const e = err as {
+    message?: string
+    httpResponse?: { status?: number; body?: { error?: { message?: string } | string } }
+  }
+  const body = e.httpResponse?.body
+  const nested =
+    typeof body?.error === 'string'
+      ? body.error
+      : body?.error && typeof body.error === 'object'
+        ? body.error.message
+        : undefined
+  if (nested) {
+    const status = e.httpResponse?.status
+    return status ? `HF ${status}: ${nested}` : nested
+  }
+  return e.message || String(err)
 }
 
 export async function extractPageWithQwen(
@@ -45,8 +76,8 @@ export async function extractPageWithQwen(
 
   const roleHint =
     role === 'question'
-      ? 'This is a QUESTION PAPER page. Extract questions only.'
-      : 'This is a STUDENT ANSWER SHEET page (may be handwritten). Extract answer blocks only.'
+      ? 'Document role: QUESTION PAPER (usually printed). Extract every question / sub-part visible on this page.'
+      : 'Document role: ANSWER SHEET (often handwritten or a key). Extract each answer block; preserve any visible label; read handwriting carefully.'
 
   let raw = ''
   try {
@@ -75,9 +106,11 @@ export async function extractPageWithQwen(
       raw = JSON.stringify(raw)
     }
   } catch (err) {
-    // Fallback: some providers use textGeneration-style APIs
-    console.error('HF chatCompletion failed, trying alternative:', err)
-    throw err
+    const detail = hfErrorMessage(err)
+    console.error('HF chatCompletion failed:', detail)
+    throw new Error(
+      `${detail} (model=${model}). Enable a VL provider for this model in Hugging Face settings, or set HF_QWEN_MODEL to a vision model your account supports (e.g. meta-llama/Llama-4-Scout-17B-16E-Instruct).`,
+    )
   }
 
   return parseExtractedBlocks(raw, page.pageIndex, idPrefix)
@@ -96,9 +129,4 @@ export async function extractDocument(
   }
 
   return all
-}
-
-/** Optional Gemini multimodal extract when EXTRACT_FALLBACK=gemini */
-export async function shouldUseGeminiExtractFallback(): boolean {
-  return process.env.EXTRACT_FALLBACK === 'gemini'
 }

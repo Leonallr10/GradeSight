@@ -60,7 +60,7 @@ type RawBlock = {
 
 /**
  * Recover CBSE-style labels from text start:
- * "19. (a) …", "19(a)", "20 (b) (i)", "Q.21(a)(ii)"
+ * "19. (a) …", "19(a)", "20 (b) (i)", "Q.21(a)(ii)", or partial "(i)" / "(b)".
  */
 export function inferLabelFromText(text: string): string | undefined {
   const t = text.trim()
@@ -69,17 +69,35 @@ export function inferLabelFromText(text: string): string | undefined {
     /^(?:q(?:uestion)?\.?\s*)?(\d{1,3})\s*[\.\)\-:]?\s*[\(\[]\s*([a-z])\s*[\)\]]/i,
     /^(?:q(?:uestion)?\.?\s*)?(\d{1,3})\s*[\.\)]\s*/i,
     /^(?:q(?:uestion)?\.?\s*)?(\d{1,3})\s*[\(\[]\s*([a-z])\s*[\)\]]/i,
+    // Partial markers common on answer sheets (need context to complete)
+    /^\(?\s*([a-z])\s*\)\s*[\(\[]?\s*((?:i{1,3}|iv|v|vi{0,3}|ix|x))\s*[\)\]]?/i,
+    /^\(?\s*((?:i{1,3}|iv|v|vi{0,3}|ix|x))\s*\)/i,
+    /^\(?\s*([a-z])\s*\)/i,
   ]
 
   for (const re of patterns) {
     const m = t.match(re)
     if (!m) continue
-    const num = m[1]
-    const letter = m[2]?.toLowerCase()
-    const roman = m[3]?.toLowerCase()
-    if (num && letter && roman) return `${num}(${letter})(${roman})`
-    if (num && letter) return `${num}(${letter})`
-    if (num) return num
+    // Full forms: groups are num / letter / roman
+    if (m[1] && /^\d+$/.test(m[1])) {
+      const num = m[1]
+      const letter = m[2]?.toLowerCase()
+      const roman = m[3]?.toLowerCase()
+      if (num && letter && roman) return `${num}(${letter})(${roman})`
+      if (num && letter) return `${num}(${letter})`
+      if (num) return num
+      continue
+    }
+    // Partial: letter+roman, roman-only, or letter-only
+    if (m[1] && m[2] && /^[a-z]$/i.test(m[1]) && /^(?:i{1,3}|iv|v|vi{0,3}|ix|x)$/i.test(m[2])) {
+      return `(${m[1].toLowerCase()})(${m[2].toLowerCase()})`
+    }
+    if (m[1] && /^(?:i{1,3}|iv|v|vi{0,3}|ix|x)$/i.test(m[1]) && !m[2]) {
+      return `(${m[1].toLowerCase()})`
+    }
+    if (m[1] && /^[a-z]$/i.test(m[1]) && !m[2]) {
+      return `(${m[1].toLowerCase()})`
+    }
   }
   return undefined
 }

@@ -131,12 +131,12 @@ export default function Page() {
       setAnswerPages(aPages)
 
       setStage('extracting')
-      setStatusMessage('Extracting questions with Qwen2.5-VL…')
+      setStatusMessage('Extracting questions with HF vision model…')
       const qRes = await postJson<{ blocks: ExtractedBlock[] }>('/api/extract', {
         role: 'question',
         pages: qPages,
       })
-      setStatusMessage('Extracting answers with Qwen2.5-VL…')
+      setStatusMessage('Extracting answers with HF vision model…')
       const aRes = await postJson<{ blocks: ExtractedBlock[] }>('/api/extract', {
         role: 'answer',
         pages: aPages,
@@ -162,7 +162,7 @@ export default function Page() {
       setPairs(mapRes.pairs)
 
       setStage('grading')
-      setStatusMessage('Grading matched answers…')
+      setStatusMessage('Grading matched answers with Groq…')
       const gradeRes = await postJson<{ summary: GradingSummary }>('/api/grade', {
         pairs: mapRes.pairs,
       })

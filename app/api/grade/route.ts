@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { gradeAllPairs } from '@/lib/gemini'
+import { gradeAllPairs } from '@/lib/groq'
 import type { MappedPair } from '@/lib/types'
 
 export const maxDuration = 300
