@@ -1,65 +1,94 @@
 # VedaAI Exam Mapping
 
-Teacher-facing Next.js app: upload a question paper + handwritten answer sheet, extract with an **HF vision model**, match answers, grade with **Groq**, and highlight answer regions.
+Teacher-facing **Next.js** app: upload a question paper + handwritten answer sheet, extract questions/answers, map side-by-side, highlight answer regions, and optionally grade with Groq.
 
 ## Stack
 
 | Layer | Choice |
 |-------|--------|
 | Framework | Next.js 16 (App Router) |
-| Extraction | HF Inference VL (default `meta-llama/Llama-4-Scout-17B-16E-Instruct`; override via `HF_QWEN_MODEL`) |
+| Extraction (deploy) | HF Inference VL — `meta-llama/Llama-4-Scout-17B-16E-Instruct` |
+| Extraction (local / offline) | Fine-tuned **Qwen2.5-VL-3B** via `ml/serve_extract.py` (`LOCAL_EXTRACT_URL`) |
 | Matching | Label normalize + cosine (lexical embeddings) |
-| Bbox repair (optional) | Same HF vision model as extract |
-| Grading | Groq (`openai/gpt-oss-20b` by default; override via `GROQ_MODEL`) |
+| Bbox repair | Same HF vision model (when HF mode) |
+| Grading | Groq (`openai/gpt-oss-20b`) |
 | PDF → images | `pdfjs-dist` (client-side) |
 
 ## Setup
 
 ```bash
-pnpm install
+pnpm install   # or npm install
 cp .env.example .env.local
-# fill HF_TOKEN and GROQ_API_KEY (required)
+# fill HF_TOKEN and GROQ_API_KEY (required for deploy mode)
 pnpm dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
 
-Get a Groq key at [console.groq.com](https://console.groq.com).
+### Local extract (optional — avoid HF quota)
+
+```bash
+cd ml && pip install -r requirements.txt
+# train in Colab: ml/notebooks/finetune_extract.ipynb
+# or: python train.py …
+python serve_extract.py
+```
+
+In `.env.local`:
+
+```env
+LOCAL_EXTRACT_URL=http://127.0.0.1:8001
+```
+
+Leave unset on Vercel (live URL uses HF Scout + Groq). **No cascading Gemini fallback.**
 
 ## Pipeline
 
 1. **Upload** — PDF/images rasterized to per-page PNGs  
-2. **`POST /api/extract`** — HF vision model text + bbox (questions and answers)  
+2. **`POST /api/extract`** — local Qwen **or** HF Scout (text + bbox)  
 3. **`POST /api/validate-bbox`** — validate boxes; optional HF localize  
 4. **`POST /api/map-answers`** — exact label match, then lexical similarity  
 5. **`POST /api/grade`** — Groq batch score/feedback + summary  
 6. **UI** — click a question → highlight answer bbox  
 
-### HF extract note
+Post-extract: [`lib/enrichAnswers.ts`](lib/enrichAnswers.ts) expands parent labels (`9` → `9(a)`/`9(b)`) and corrects common mislabels.
 
-`Qwen/Qwen2.5-VL-7B-Instruct` often returns *“not supported by any provider you have enabled”* unless you enable a matching Inference Provider (e.g. Hyperbolic) in [HF settings](https://huggingface.co/settings/inference-providers). The default model is Llama 4 Scout, which works on typical HF free/pro provider sets. Point `HF_QWEN_MODEL` at Qwen once that provider is enabled.
+## Per-stage evaluation
 
-## Why we did not fine-tune on the handwriting dataset
+```bash
+pnpm recheck   # needs `pnpm dev`; writes .recheck-out/live-report.json + stage-*.json
+pnpm score     # stage accuracies + 9 assignment conditions
+pnpm eval      # score existing live-report
+```
 
-The [JunaidMB/handwriting-ocr-images-dataset](https://huggingface.co/datasets/JunaidMB/handwriting-ocr-images-dataset) is useful research data (~78 GCSE answer crops), but **fine-tuning a 7B VL model is out of scope** for this app:
+Each stage reports accuracy separately:
 
-- Only **62 train samples** — too small to fine-tune reliably  
-- Needs **GPU training** (LoRA/PEFT), hours of compute, and a **hosted endpoint** afterward  
-- Vercel serverless cannot load fine-tuned 7B weights  
-- Dataset is **cropped answer regions + plain text**, not full exam pages with labels/bboxes  
+| Stage | Metrics |
+|-------|---------|
+| Extract | question/answer label P/R/F1, bbox coverage |
+| Mapping | match P/R/F1, highlight bbox rate, edge cases |
+| Grading | row coverage, score bounds, unanswered=0, feedback |
 
-**What we do instead:** call a public HF vision checkpoint with stronger prompts. You can later fine-tune offline and point `HF_QWEN_MODEL` at your adapter/endpoint if you host one.
+Gold fixtures: [`ml/fixtures/`](ml/fixtures/). Model CER/WER/IoU: `python ml/evaluate.py --demo`.
 
-## Deploy (manual — Vercel)
+## Fine-tuning (Colab)
+
+See [`ml/README.md`](ml/README.md). Pipeline: preprocess → load Qwen2.5-VL-3B → LoRA → evaluate → export adapter → local FastAPI.
+
+Scout is used for the **live URL** because Vercel cannot load LoRA weights; local mode is for training demos and avoiding API exhaustion.
+
+## Deploy (Vercel)
 
 1. `pnpm build` locally to verify.  
 2. Import the repo in the Vercel dashboard.  
-3. Add env vars: `HF_TOKEN`, `GROQ_API_KEY`, optional `GROQ_MODEL` / `HF_QWEN_MODEL`.  
+3. Env: `HF_TOKEN`, `GROQ_API_KEY` (do not set `LOCAL_EXTRACT_URL` on Vercel).  
 4. `vercel.json` sets API `maxDuration: 300`.
 
 ## Project layout
 
 - `app/page.tsx` — UI orchestration  
 - `app/api/*/route.ts` — pipeline endpoints  
-- `lib/hf-qwen.ts`, `lib/groq.ts`, `lib/matching.ts`, `lib/pdf-rasterize.ts`  
+- `lib/extract.ts`, `lib/hf-qwen.ts`, `lib/local-extract.ts`, `lib/groq.ts`, `lib/matching.ts`  
+- `lib/eval/*` — per-stage evaluation  
+- `ml/` — Colab train + local serve  
 - `components/*` — Upload, ProgressStepper, QuestionList, AnswerSheetViewer, GradingSummary  
