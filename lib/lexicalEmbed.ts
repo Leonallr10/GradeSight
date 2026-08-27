@@ -1,11 +1,14 @@
-/** Lightweight lexical vectors so Pass-2 matching works without Gemini embeddings. */
+/** Lightweight lexical vectors so Pass-2 matching works without external embeddings.
+ *  Keeps LaTeX-ish tokens (frac, dx, subscripts) so formulas can still match.
+ */
 export function lexicalEmbedTexts(texts: string[]): number[][] {
   const docs = texts.map((t) =>
     t
       .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, ' ')
+      .replace(/\\\\[a-z]+/g, (m) => ` ${m.slice(2)} `) // \frac → frac
+      .replace(/[^a-z0-9\s_^]+/g, ' ')
       .split(/\s+/)
-      .filter((w) => w.length > 2),
+      .filter((w) => w.length > 1),
   )
   const vocab = new Map<string, number>()
   for (const tokens of docs) {

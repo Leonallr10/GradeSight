@@ -781,9 +781,89 @@ nav a.active {
   flex: none;
 }
 
-.q-row span:nth-child(2) {
+.q-row span:nth-child(2),
+.q-row .block-body {
   flex: 1;
   line-height: 1.35;
+  min-width: 0;
+  text-align: left;
+}
+
+.block-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.block-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.content-kind {
+  align-self: flex-start;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #eee;
+  color: #444;
+}
+
+.kind-formula,
+.kind-derivative {
+  background: #e8f1ff;
+  color: #1d4f91;
+}
+
+.kind-diagram {
+  background: #fff3e0;
+  color: #9a5b00;
+}
+
+.kind-mixed {
+  background: #f3e8ff;
+  color: #5b2d8e;
+}
+
+.math-latex {
+  display: block;
+  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+  font-size: 10px;
+  background: #f6f6f4;
+  border: 1px solid #e2e0dc;
+  border-radius: 4px;
+  padding: 4px 6px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #222;
+}
+
+.diagram-desc {
+  margin: 0;
+  font-size: 9px;
+  color: #555;
+  line-height: 1.35;
+}
+
+.answer-preview {
+  margin: 6px 0;
+  padding: 6px;
+  background: #faf9f7;
+  border-radius: 6px;
+  border: 1px solid #eceae6;
+}
+
+.answer-preview > b {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 9px;
+  color: #666;
 }
 
 .score {
@@ -945,6 +1025,17 @@ nav a.active {
   margin: -40px 0 24px;
   position: relative;
   z-index: 2;
+}
+
+.dedupe-warning {
+  margin: 8px 16px 0;
+  padding: 8px 12px;
+  border: 1px solid #e0a800;
+  background: #fff8e1;
+  color: #6b5200;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 /* Question selection + panels */

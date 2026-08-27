@@ -1,3 +1,4 @@
+import { coerceContentKind, inferContentKind } from './blockContent'
 import { coerceBbox } from './bboxCheck'
 import type { BBox, ExtractedBlock } from './types'
 
@@ -45,8 +46,11 @@ export function extractJsonPayload(raw: string): unknown {
 
 type RawBlock = {
   text?: unknown
+  content?: unknown
   label?: unknown
   labelNumber?: unknown
+  labelWritten?: unknown
+  label_written?: unknown
   number?: unknown
   question_number?: unknown
   bbox?: unknown
@@ -56,20 +60,38 @@ type RawBlock = {
   pageIndex?: unknown
   marks?: unknown
   maxScore?: unknown
+  contentKind?: unknown
+  content_kind?: unknown
+  kind?: unknown
+  type?: unknown
+  mathLatex?: unknown
+  math_latex?: unknown
+  latex?: unknown
+  formula?: unknown
+  diagramDescription?: unknown
+  diagram_description?: unknown
+  diagram?: unknown
+  figureDescription?: unknown
+  isStrikethrough?: unknown
+  is_strikethrough?: unknown
+  strikethrough?: unknown
+  crossedOut?: unknown
+  crossed_out?: unknown
 }
 
 /**
- * Recover CBSE-style labels from text start:
- * "19. (a) …", "19(a)", "20 (b) (i)", "Q.21(a)(ii)", or partial "(i)" / "(b)".
+ * Recover exam-style labels from text start:
+ * "19. (a) …", "19(a)", "20 (b) (i)", or partial "(i)" / "(b)".
  */
 export function inferLabelFromText(text: string): string | undefined {
   const t = text.trim()
   const patterns = [
     /^(?:q(?:uestion)?\.?\s*)?(\d{1,3})\s*[\.\)\-:]?\s*[\(\[]?\s*([a-z])\s*[\)\]]?\s*[\(\[]?\s*((?:i{1,3}|iv|v|vi{0,3}|ix|x))\s*[\)\]]?/i,
     /^(?:q(?:uestion)?\.?\s*)?(\d{1,3})\s*[\.\)\-:]?\s*[\(\[]\s*([a-z])\s*[\)\]]/i,
+    /^q\s*(\d{1,3})\s*[\(\[]\s*([a-z])\s*[\)\]]/i,
+    /^q\s*(\d{1,3})\s*[:.\-–—\s]/i,
     /^(?:q(?:uestion)?\.?\s*)?(\d{1,3})\s*[\.\)]\s*/i,
     /^(?:q(?:uestion)?\.?\s*)?(\d{1,3})\s*[\(\[]\s*([a-z])\s*[\)\]]/i,
-    // Partial markers common on answer sheets (need context to complete)
     /^\(?\s*([a-z])\s*\)\s*[\(\[]?\s*((?:i{1,3}|iv|v|vi{0,3}|ix|x))\s*[\)\]]?/i,
     /^\(?\s*((?:i{1,3}|iv|v|vi{0,3}|ix|x))\s*\)/i,
     /^\(?\s*([a-z])\s*\)/i,
@@ -78,7 +100,6 @@ export function inferLabelFromText(text: string): string | undefined {
   for (const re of patterns) {
     const m = t.match(re)
     if (!m) continue
-    // Full forms: groups are num / letter / roman
     if (m[1] && /^\d+$/.test(m[1])) {
       const num = m[1]
       const letter = m[2]?.toLowerCase()
@@ -88,7 +109,6 @@ export function inferLabelFromText(text: string): string | undefined {
       if (num) return num
       continue
     }
-    // Partial: letter+roman, roman-only, or letter-only
     if (m[1] && m[2] && /^[a-z]$/i.test(m[1]) && /^(?:i{1,3}|iv|v|vi{0,3}|ix|x)$/i.test(m[2])) {
       return `(${m[1].toLowerCase()})(${m[2].toLowerCase()})`
     }
@@ -103,7 +123,14 @@ export function inferLabelFromText(text: string): string | undefined {
 }
 
 function pickLabel(item: RawBlock, text: string): string | undefined {
-  const candidates = [item.labelNumber, item.label, item.number, item.question_number]
+  const candidates = [
+    item.labelWritten,
+    item.label_written,
+    item.labelNumber,
+    item.label,
+    item.number,
+    item.question_number,
+  ]
   for (const c of candidates) {
     if (typeof c === 'string' && c.trim()) return c.trim()
     if (typeof c === 'number') return String(c)
@@ -118,6 +145,30 @@ function pickBbox(item: RawBlock): BBox | undefined {
     coerceBbox(item.bbox_2d) ??
     undefined
   )
+}
+
+function pickString(...vals: unknown[]): string | undefined {
+  for (const v of vals) {
+    if (typeof v === 'string' && v.trim()) return v.trim()
+  }
+  return undefined
+}
+
+function buildText(item: RawBlock): string {
+  const base =
+    pickString(item.text, item.content) ??
+    pickString(item.mathLatex, item.math_latex, item.latex, item.formula) ??
+    pickString(item.diagramDescription, item.diagram_description, item.diagram, item.figureDescription) ??
+    ''
+  return base
+}
+
+function pickBool(...vals: unknown[]): boolean {
+  for (const v of vals) {
+    if (typeof v === 'boolean') return v
+    if (typeof v === 'string' && /^(true|yes|1)$/i.test(v.trim())) return true
+  }
+  return false
 }
 
 export function parseExtractedBlocks(
@@ -142,15 +193,41 @@ export function parseExtractedBlocks(
   const blocks: ExtractedBlock[] = []
   let i = 0
   for (const item of items) {
-    const text =
-      typeof item.text === 'string'
-        ? item.text.trim()
-        : typeof (item as { content?: unknown }).content === 'string'
-          ? String((item as { content: string }).content).trim()
-          : ''
+    const mathLatex = pickString(item.mathLatex, item.math_latex, item.latex, item.formula)
+    const diagramDescription = pickString(
+      item.diagramDescription,
+      item.diagram_description,
+      item.diagram,
+      item.figureDescription,
+    )
+    let text = buildText(item)
+    if (mathLatex && !text.includes(mathLatex) && !/Math \(LaTeX\)/i.test(text)) {
+      text = text ? `${text}\n${mathLatex}` : mathLatex
+    }
+    if (diagramDescription && !text.includes(diagramDescription)) {
+      text = text
+        ? `${text}\n[Diagram] ${diagramDescription}`
+        : `[Diagram] ${diagramDescription}`
+    }
     if (!text) continue
 
+    const isStrikethrough = pickBool(
+      item.isStrikethrough,
+      item.is_strikethrough,
+      item.strikethrough,
+      item.crossedOut,
+      item.crossed_out,
+    )
+
+    const contentKind =
+      coerceContentKind(item.contentKind) ??
+      coerceContentKind(item.content_kind) ??
+      coerceContentKind(item.kind) ??
+      coerceContentKind(item.type) ??
+      inferContentKind({ text, mathLatex, diagramDescription })
+
     const bbox = pickBbox(item)
+    const labelWritten = pickString(item.labelWritten, item.label_written)
     const labelNumber = pickLabel(item, text)
     const page =
       typeof item.pageIndex === 'number'
@@ -164,8 +241,13 @@ export function parseExtractedBlocks(
       pageIndex: page,
       text,
       labelNumber,
+      labelWritten,
       bbox,
       bboxSource: bbox ? 'qwen' : 'none',
+      contentKind,
+      mathLatex,
+      diagramDescription,
+      isStrikethrough: isStrikethrough || undefined,
     })
     i += 1
   }

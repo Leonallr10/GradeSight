@@ -8,8 +8,8 @@ Teacher-facing Next.js app: upload a question paper + handwritten answer sheet, 
 |-------|--------|
 | Framework | Next.js 16 (App Router) |
 | Extraction | HF Inference VL (default `meta-llama/Llama-4-Scout-17B-16E-Instruct`; override via `HF_QWEN_MODEL`) |
-| Matching | Label normalize + cosine (Gemini embeddings if `GEMINI_API_KEY` set, else lexical) |
-| Bbox repair (optional) | Gemini — only if `GEMINI_API_KEY` is set |
+| Matching | Label normalize + cosine (lexical embeddings) |
+| Bbox repair (optional) | Same HF vision model as extract |
 | Grading | Groq (`openai/gpt-oss-20b` by default; override via `GROQ_MODEL`) |
 | PDF → images | `pdfjs-dist` (client-side) |
 
@@ -30,9 +30,9 @@ Get a Groq key at [console.groq.com](https://console.groq.com).
 
 1. **Upload** — PDF/images rasterized to per-page PNGs  
 2. **`POST /api/extract`** — HF vision model text + bbox (questions and answers)  
-3. **`POST /api/validate-bbox`** — validate boxes; optional Gemini localize  
-4. **`POST /api/map-answers`** — exact label match, then similarity ≥ 0.72  
-5. **`POST /api/grade`** — Groq per-pair score/feedback + summary  
+3. **`POST /api/validate-bbox`** — validate boxes; optional HF localize  
+4. **`POST /api/map-answers`** — exact label match, then lexical similarity  
+5. **`POST /api/grade`** — Groq batch score/feedback + summary  
 6. **UI** — click a question → highlight answer bbox  
 
 ### HF extract note
@@ -54,7 +54,7 @@ The [JunaidMB/handwriting-ocr-images-dataset](https://huggingface.co/datasets/Ju
 
 1. `pnpm build` locally to verify.  
 2. Import the repo in the Vercel dashboard.  
-3. Add env vars: `HF_TOKEN`, `GROQ_API_KEY`, optional `GROQ_MODEL` / `GEMINI_API_KEY`.  
+3. Add env vars: `HF_TOKEN`, `GROQ_API_KEY`, optional `GROQ_MODEL` / `HF_QWEN_MODEL`.  
 4. `vercel.json` sets API `maxDuration: 300`.
 
 ## Project layout

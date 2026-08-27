@@ -1,11 +1,33 @@
 'use client'
 
 import { useState } from 'react'
-import type { GradeResult, MappedPair } from '@/lib/types'
+import { contentKindLabel } from '@/lib/blockContent'
+import type { ExtractedBlock, GradeResult, MappedPair } from '@/lib/types'
 
 function scoreLabel(grade?: GradeResult): string {
   if (!grade) return '— / —'
   return `${grade.score} / ${grade.maxScore}`
+}
+
+function BlockBody({ block }: { block: ExtractedBlock | null | undefined }) {
+  if (!block) return <span>—</span>
+  const kind = contentKindLabel(block.contentKind)
+  return (
+    <div className="block-body">
+      {kind && <span className={`content-kind kind-${block.contentKind}`}>{kind}</span>}
+      <span className="block-text">{block.text}</span>
+      {block.mathLatex ? (
+        <code className="math-latex" title="Extracted formula (LaTeX)">
+          {block.mathLatex}
+        </code>
+      ) : null}
+      {block.diagramDescription ? (
+        <p className="diagram-desc">
+          <b>Diagram:</b> {block.diagramDescription}
+        </p>
+      ) : null}
+    </div>
+  )
 }
 
 export function QuestionList({
@@ -70,13 +92,19 @@ export function QuestionList({
               aria-expanded={isExpanded}
             >
               <strong>{label}</strong>
-              <span>{pair.question?.text ?? '—'}</span>
+              <BlockBody block={pair.question} />
               <b className="score">{scoreLabel(grade)}</b>
               <span>{isExpanded ? '⌃' : '⌄'}</span>
             </button>
             {isExpanded && (
               <div className="feedback">
                 <b>{unanswered ? 'No answer mapped' : 'AI Feedback'}</b>
+                {pair.answer && !unanswered ? (
+                  <div className="answer-preview">
+                    <b>Mapped answer</b>
+                    <BlockBody block={pair.answer} />
+                  </div>
+                ) : null}
                 <p>
                   {grade?.feedback ||
                     (unanswered
@@ -100,7 +128,7 @@ export function QuestionList({
             >
               <button className="q-row" onClick={() => onSelect(pair)}>
                 <strong>?</strong>
-                <span>{pair.answer?.text ?? '—'}</span>
+                <BlockBody block={pair.answer} />
                 <b className="score">Unmatched</b>
               </button>
             </article>

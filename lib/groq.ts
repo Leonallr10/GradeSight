@@ -1,3 +1,4 @@
+import { blockContentForModel } from './blockContent'
 import { extractJsonPayload } from './parseExtract'
 import { inferMaxScore } from './normalizeLabel'
 import type { GradeResult, MappedPair } from './types'
@@ -137,14 +138,23 @@ async function gradeMatchedBatch(matched: MappedPair[]): Promise<{
     pairId: pair.id,
     label: pair.question?.labelNumber ?? 'unlabeled',
     maxHint: pair.question ? inferMaxScore(pair.question.text, 2) : 2,
-    question: pair.question?.text ?? '',
-    answer: pair.answer?.text ?? '',
+    contentKind: pair.answer?.contentKind ?? pair.question?.contentKind ?? 'text',
+    question: blockContentForModel(pair.question),
+    answer: blockContentForModel(pair.answer),
+    questionMath: pair.question?.mathLatex ?? null,
+    answerMath: pair.answer?.mathLatex ?? null,
+    questionDiagram: pair.question?.diagramDescription ?? null,
+    answerDiagram: pair.answer?.diagramDescription ?? null,
   }))
 
   const prompt = `Grade each student's answer against its paired question (school / board exam).
-Use only the question and answer text provided — do not assume a fixed syllabus or invent missing content.
+Use only the provided fields — do not invent missing content.
+Special rules for STEM:
+- Formulas / mathLatex: accept equivalent forms (algebraically or chemically equivalent), not only identical strings.
+- Derivatives / integrals: check the final result and key intermediate steps when present.
+- Diagrams / diagramDescription: score whether the described figure matches what the question asks (labels, relationships, shape). Do not require pixel-perfect drawing text.
 Use maxHint as maxScore unless the question clearly states another mark value.
-Be concise in feedback (2-3 sentences each).
+Be concise in feedback (2-3 sentences each). Mention formula/diagram issues explicitly when relevant.
 
 Return JSON exactly shaped as:
 {"grades":[{"pairId":"...","score":0,"maxScore":2,"isCorrect":false,"feedback":"..."}],"overallFeedback":"one short teacher summary paragraph"}

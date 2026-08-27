@@ -9,6 +9,9 @@ export type BBoxSource = 'qwen' | 'gemini' | 'none'
 
 export type DocumentRole = 'question' | 'answer'
 
+/** What the block primarily contains (STEM-aware extraction). */
+export type ContentKind = 'text' | 'formula' | 'derivative' | 'diagram' | 'mixed'
+
 export type PageImage = {
   pageIndex: number
   imageBase64: string
@@ -20,8 +23,18 @@ export type ExtractedBlock = {
   pageIndex: number
   text: string
   labelNumber?: string
+  /** Explicit label as written on the sheet (required from extract when visible). */
+  labelWritten?: string
   bbox?: BBox
   bboxSource: BBoxSource
+  /** Primary content type for STEM answers (formula / diagram / etc.). */
+  contentKind?: ContentKind
+  /** Math / chemistry / derivatives as LaTeX (ASCII-safe). */
+  mathLatex?: string
+  /** Structured description of a drawn figure, graph, or labelled diagram. */
+  diagramDescription?: string
+  /** Crossed-out / struck draft text — exclude from grading. */
+  isStrikethrough?: boolean
   /** Extra pages this block spans (same text region continued) */
   extraPages?: Array<{ pageIndex: number; bbox: BBox }>
 }

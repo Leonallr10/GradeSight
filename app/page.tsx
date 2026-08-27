@@ -7,6 +7,7 @@ import { ProgressStepper } from '@/components/ProgressStepper'
 import { QuestionList } from '@/components/QuestionList'
 import { Sidebar, Topbar, UploadScreen } from '@/components/UploadScreen'
 import { rasterizeFile } from '@/lib/pdf-rasterize'
+import { dedupeNearDuplicatePages } from '@/lib/dedupePages'
 import type {
   ExtractedBlock,
   GradeResult,
@@ -100,6 +101,7 @@ export default function Page() {
   })
   const [statusMessage, setStatusMessage] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
+  const [dedupeWarning, setDedupeWarning] = useState<string | null>(null)
 
   const [questionPages, setQuestionPages] = useState<PageImage[]>([])
   const [answerPages, setAnswerPages] = useState<PageImage[]>([])
@@ -119,16 +121,28 @@ export default function Page() {
   const runPipeline = useCallback(async () => {
     if (!files.question || !files.answer) return
     setError(null)
+    setDedupeWarning(null)
 
     try {
       setStage('uploading')
       setStatusMessage('Rasterizing PDF/image pages…')
-      const [qPages, aPages] = await Promise.all([
+      const [qRaw, aRaw] = await Promise.all([
         rasterizeFile(files.question),
         rasterizeFile(files.answer),
       ])
+      const [qDeduped, aDeduped] = await Promise.all([
+        dedupeNearDuplicatePages(qRaw),
+        dedupeNearDuplicatePages(aRaw),
+      ])
+      const qPages = qDeduped.pages
+      const aPages = aDeduped.pages
       setQuestionPages(qPages)
       setAnswerPages(aPages)
+      const dedupeNotes = [qDeduped.warning, aDeduped.warning].filter(Boolean)
+      if (dedupeNotes.length) {
+        setDedupeWarning(dedupeNotes.join(' '))
+        console.warn(dedupeNotes.join(' | '))
+      }
 
       setStage('extracting')
       setStatusMessage('Extracting questions with HF vision model…')
@@ -181,6 +195,7 @@ export default function Page() {
   const back = () => {
     setStage('upload')
     setError(null)
+    setDedupeWarning(null)
     setStatusMessage('')
     setPairs([])
     setGrades([])
@@ -217,6 +232,11 @@ export default function Page() {
           <button className="primary" onClick={back}>
             Back to upload
           </button>
+        </div>
+      )}
+      {dedupeWarning && (showMapping || showProcessing) && (
+        <div className="dedupe-warning" role="status">
+          {dedupeWarning}
         </div>
       )}
       {showMapping && (

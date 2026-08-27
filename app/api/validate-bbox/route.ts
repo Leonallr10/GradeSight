@@ -1,43 +1,13 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { partitionByBbox } from '@/lib/bboxCheck'
+import { extractedBlockSchema } from '@/lib/blockSchema'
 import type { ExtractedBlock, PageImage } from '@/lib/types'
 
 export const maxDuration = 300
 
-const bboxSchema = z
-  .object({
-    x: z.number(),
-    y: z.number(),
-    w: z.number(),
-    h: z.number(),
-  })
-  .optional()
-
 const bodySchema = z.object({
-  blocks: z.array(
-    z.object({
-      id: z.string(),
-      pageIndex: z.number().int().min(0),
-      text: z.string(),
-      labelNumber: z.string().optional(),
-      bbox: bboxSchema,
-      bboxSource: z.enum(['qwen', 'gemini', 'none']),
-      extraPages: z
-        .array(
-          z.object({
-            pageIndex: z.number(),
-            bbox: z.object({
-              x: z.number(),
-              y: z.number(),
-              w: z.number(),
-              h: z.number(),
-            }),
-          }),
-        )
-        .optional(),
-    }),
-  ),
+  blocks: z.array(extractedBlockSchema),
   pages: z.array(
     z.object({
       pageIndex: z.number().int().min(0),
@@ -47,6 +17,7 @@ const bodySchema = z.object({
   ),
 })
 
+/** Validate bboxes from HF extract. Repair uses HF VL when needed (no Gemini). */
 export async function POST(req: Request) {
   try {
     const json = await req.json()
@@ -57,13 +28,12 @@ export async function POST(req: Request) {
     const { valid, invalid } = partitionByBbox(blocks)
     let repaired: ExtractedBlock[] = invalid
 
-    // Optional Gemini bbox repair only when key is present (extract stays HF-only)
-    if (invalid.length > 0 && process.env.GEMINI_API_KEY) {
+    if (invalid.length > 0 && process.env.HF_TOKEN) {
       try {
-        const { repairBlocksWithGemini } = await import('@/lib/gemini')
-        repaired = await repairBlocksWithGemini(invalid, pages)
+        const { repairBlocksWithHf } = await import('@/lib/hf-qwen')
+        repaired = await repairBlocksWithHf(invalid, pages)
       } catch (err) {
-        console.warn('Gemini bbox repair skipped:', err)
+        console.warn('HF bbox repair skipped:', err)
         repaired = invalid
       }
     }
@@ -76,7 +46,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       blocks: result,
-      repairedCount: repaired.filter((b) => b.bboxSource === 'gemini').length,
+      repairedCount: repaired.filter((b) => b.bbox && b.bboxSource === 'qwen').length,
       invalidCount: invalid.length,
     })
   } catch (err) {

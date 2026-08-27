@@ -68,7 +68,8 @@ export type BboxCheckResult = {
   invalid: ExtractedBlock[]
 }
 
-/** Split blocks into those with valid bboxes and those needing Gemini repair. */
+/** Split blocks into those with valid bboxes and those needing repair.
+ *  Preserves STEM fields (mathLatex, diagramDescription, contentKind). */
 export function partitionByBbox(blocks: ExtractedBlock[]): BboxCheckResult {
   const valid: ExtractedBlock[] = []
   const invalid: ExtractedBlock[] = []

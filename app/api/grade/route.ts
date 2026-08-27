@@ -1,35 +1,18 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
+import { extractedBlockSchemaNullable } from '@/lib/blockSchema'
 import { gradeAllPairs } from '@/lib/groq'
 import type { MappedPair } from '@/lib/types'
 
 export const maxDuration = 300
-
-const blockSchema = z
-  .object({
-    id: z.string(),
-    pageIndex: z.number(),
-    text: z.string(),
-    labelNumber: z.string().optional(),
-    bbox: z
-      .object({
-        x: z.number(),
-        y: z.number(),
-        w: z.number(),
-        h: z.number(),
-      })
-      .optional(),
-    bboxSource: z.enum(['qwen', 'gemini', 'none']),
-  })
-  .nullable()
 
 const bodySchema = z.object({
   pairs: z.array(
     z.object({
       id: z.string(),
       status: z.enum(['matched', 'unanswered', 'unmatched_answer']),
-      question: blockSchema,
-      answer: blockSchema,
+      question: extractedBlockSchemaNullable,
+      answer: extractedBlockSchemaNullable,
       similarity: z.number().optional(),
     }),
   ),

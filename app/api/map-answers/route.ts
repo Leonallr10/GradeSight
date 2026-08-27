@@ -1,56 +1,16 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
+import { extractedBlockSchema } from '@/lib/blockSchema'
 import { lexicalEmbedTexts } from '@/lib/lexicalEmbed'
 import { mapAnswersToQuestions } from '@/lib/matching'
 import type { ExtractedBlock } from '@/lib/types'
 
 export const maxDuration = 120
 
-const blockSchema = z.object({
-  id: z.string(),
-  pageIndex: z.number(),
-  text: z.string(),
-  labelNumber: z.string().optional(),
-  bbox: z
-    .object({
-      x: z.number(),
-      y: z.number(),
-      w: z.number(),
-      h: z.number(),
-    })
-    .optional(),
-  bboxSource: z.enum(['qwen', 'gemini', 'none']),
-  extraPages: z
-    .array(
-      z.object({
-        pageIndex: z.number(),
-        bbox: z.object({
-          x: z.number(),
-          y: z.number(),
-          w: z.number(),
-          h: z.number(),
-        }),
-      }),
-    )
-    .optional(),
-})
-
 const bodySchema = z.object({
-  questions: z.array(blockSchema),
-  answers: z.array(blockSchema),
+  questions: z.array(extractedBlockSchema),
+  answers: z.array(extractedBlockSchema),
 })
-
-async function embedForMatching(texts: string[]): Promise<number[][]> {
-  if (process.env.GEMINI_API_KEY) {
-    try {
-      const { embedTexts } = await import('@/lib/gemini')
-      return await embedTexts(texts)
-    } catch (err) {
-      console.warn('Gemini embeddings failed; using lexical fallback:', err)
-    }
-  }
-  return lexicalEmbedTexts(texts)
-}
 
 export async function POST(req: Request) {
   try {
@@ -59,7 +19,7 @@ export async function POST(req: Request) {
     const pairs = await mapAnswersToQuestions(
       body.questions as ExtractedBlock[],
       body.answers as ExtractedBlock[],
-      embedForMatching,
+      lexicalEmbedTexts,
     )
     return NextResponse.json({ pairs })
   } catch (err) {
