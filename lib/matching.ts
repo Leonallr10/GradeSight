@@ -1,5 +1,6 @@
 import { blockContentForModel } from './blockContent'
 import { cosineSimilarity } from './cosine'
+import { enrichAnswerLabels as repairAnswerLabels } from './enrichAnswers'
 import { findLabelAnywhere } from './findLabel'
 import { groupAnswersByLabel } from './groupAnswers'
 import {
@@ -38,7 +39,7 @@ function partsFromRaw(raw?: string | null): LabelParts {
   return parseNormalizedLabel(n)
 }
 
-export function enrichAnswerLabels(answers: ExtractedBlock[]): ExtractedBlock[] {
+export function inheritAnswerLabels(answers: ExtractedBlock[]): ExtractedBlock[] {
   let lastNum: string | undefined
   let lastLetter: string | undefined
 
@@ -73,6 +74,10 @@ export function enrichAnswerLabels(answers: ExtractedBlock[]): ExtractedBlock[] 
     }
   })
 }
+
+/** @deprecated use inheritAnswerLabels — kept as alias for older imports */
+export const enrichAnswerLabels = inheritAnswerLabels
+
 
 /** Reject obvious cross-topic false positives (e.g. photosynthesis ↔ Newton's laws). */
 function topicalConflict(question: ExtractedBlock, answer: ExtractedBlock): boolean {
@@ -110,7 +115,10 @@ export async function mapAnswersToQuestions(
 ): Promise<MappedPair[]> {
   const leafQuestions = preferLeafBlocks(questions)
   const grouped = groupAnswersByLabel(answers.filter((a) => !a.isStrikethrough))
-  const enrichedAnswers = preferLeafBlocks(enrichAnswerLabels(grouped))
+  // Content repair (mislabel / parent split / mega-block) then letter inheritance
+  const enrichedAnswers = preferLeafBlocks(
+    inheritAnswerLabels(repairAnswerLabels(grouped)),
+  )
 
   const pairs: MappedPair[] = []
   const usedAnswerIds = new Set<string>()
@@ -124,11 +132,11 @@ export async function mapAnswersToQuestions(
     }
   }
 
-  // Pass 1 — label exact match
+  // Pass 1 — label exact match (prefer repaired labelNumber over stale text cues)
   for (const answer of enrichedAnswers) {
     const label = normalizeLabel(
-      findLabelAnywhere(answer.text, answer.labelWritten || answer.labelNumber) ||
-        answer.labelNumber ||
+      answer.labelNumber ||
+        findLabelAnywhere(answer.text, answer.labelWritten || answer.labelNumber) ||
         answer.labelWritten,
     )
     if (!label) continue

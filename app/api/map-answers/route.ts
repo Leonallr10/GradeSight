@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { extractedBlockSchema } from '@/lib/blockSchema'
+import { enrichAnswerLabels } from '@/lib/enrichAnswers'
 import { lexicalEmbedTexts } from '@/lib/lexicalEmbed'
 import { mapAnswersToQuestions } from '@/lib/matching'
 import type { ExtractedBlock } from '@/lib/types'
@@ -16,9 +17,11 @@ export async function POST(req: Request) {
   try {
     const json = await req.json()
     const body = bodySchema.parse(json)
+    // Map-time content enrich so cached/raw extracts still get label repair
+    const answers = enrichAnswerLabels(body.answers as ExtractedBlock[])
     const pairs = await mapAnswersToQuestions(
       body.questions as ExtractedBlock[],
-      body.answers as ExtractedBlock[],
+      answers,
       lexicalEmbedTexts,
     )
     return NextResponse.json({ pairs })

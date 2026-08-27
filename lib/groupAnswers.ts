@@ -1,5 +1,6 @@
 import { inferContentKind } from './blockContent'
 import { findLabelAnywhere } from './findLabel'
+import { normalizeLabel } from './normalizeLabel'
 import type { BBox, ExtractedBlock } from './types'
 
 function clean(text: string): string {
@@ -108,11 +109,17 @@ function mergeInto(target: ExtractedBlock, next: ExtractedBlock): ExtractedBlock
   }
 }
 
-/** Drop near-duplicate answer bodies (same page photographed twice). Prefer labeled copies. */
+/** Drop near-duplicate answer bodies (same page photographed twice). Prefer labeled copies.
+ * Never merge blocks that already have different normalized labels. */
 export function dedupeAnswerBlocks(blocks: ExtractedBlock[]): ExtractedBlock[] {
   const out: ExtractedBlock[] = []
   for (const block of blocks) {
-    const idx = out.findIndex((prev) => textOverlapRatio(prev.text, block.text) >= 0.82)
+    const nextNorm = normalizeLabel(block.labelNumber || block.labelWritten)
+    const idx = out.findIndex((prev) => {
+      const prevNorm = normalizeLabel(prev.labelNumber || prev.labelWritten)
+      if (prevNorm && nextNorm && prevNorm !== nextNorm) return false
+      return textOverlapRatio(prev.text, block.text) >= 0.82
+    })
     if (idx < 0) {
       out.push(block)
       continue
