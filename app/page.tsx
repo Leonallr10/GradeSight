@@ -27,9 +27,35 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
   })
   const data = await res.json()
   if (!res.ok) {
-    throw new Error(data?.error || `Request failed: ${url}`)
+    const msg = data?.error || `Request failed: ${url}`
+    if (/403|insufficient permissions|Inference Providers on behalf/i.test(String(msg))) {
+      throw new Error(
+        `${msg} Create a fine-grained HF token with "Make calls to Inference Providers" at huggingface.co/settings/tokens and update HF_TOKEN in .env.local.`,
+      )
+    }
+    if (/402|depleted|credits|quota|billing/i.test(String(msg))) {
+      throw new Error(
+        `${msg} Add HF Inference credits at huggingface.co/settings/billing, or enable legacy local extract (USE_LEGACY_LOCAL_EXTRACT=1 + LOCAL_EXTRACT_URL).`,
+      )
+    }
+    throw new Error(msg)
   }
   return data as T
+}
+
+function assertExtractBlocks(
+  blocks: ExtractedBlock[],
+  role: 'question' | 'answer',
+): void {
+  if (blocks.length > 0) return
+  if (role === 'question') {
+    throw new Error(
+      'No questions were extracted from the question paper. Upload QUESTION_PAPER.pdf in the left slot (not the handwritten answer sheet). If the file is correct, HF may have returned an empty response — retry or check HF credits.',
+    )
+  }
+  throw new Error(
+    'No answers were extracted from the answer sheet. Check the upload and retry.',
+  )
 }
 
 function MappingScreen({
@@ -145,16 +171,23 @@ export default function Page() {
       }
 
       setStage('extracting')
-      setStatusMessage('Extracting questions with HF vision model…')
-      const qRes = await postJson<{ blocks: ExtractedBlock[] }>('/api/extract', {
+      setStatusMessage('Extracting questions…')
+      const qRes = await postJson<{ blocks: ExtractedBlock[]; via?: string }>('/api/extract', {
         role: 'question',
         pages: qPages,
       })
-      setStatusMessage('Extracting answers with HF vision model…')
-      const aRes = await postJson<{ blocks: ExtractedBlock[] }>('/api/extract', {
+      assertExtractBlocks(qRes.blocks, 'question')
+      setStatusMessage(
+        `Extracting answers…${qRes.via ? ` (questions via ${qRes.via})` : ''}`,
+      )
+      const aRes = await postJson<{ blocks: ExtractedBlock[]; via?: string }>('/api/extract', {
         role: 'answer',
         pages: aPages,
       })
+      assertExtractBlocks(aRes.blocks, 'answer')
+      if (aRes.via && aRes.via !== 'hf') {
+        console.info(`[extract] answers via ${aRes.via}`)
+      }
 
       setStage('validating')
       setStatusMessage('Validating bounding boxes…')
@@ -173,6 +206,14 @@ export default function Page() {
         questions: qVal.blocks,
         answers: aVal.blocks,
       })
+      const hasQuestions = mapRes.pairs.some((p) => p.question)
+      const unmatchedOnly =
+        !hasQuestions && mapRes.pairs.some((p) => p.status === 'unmatched_answer')
+      if (unmatchedOnly) {
+        throw new Error(
+          'Answers were extracted but no questions could be matched. Upload the printed question paper in the left slot and the handwritten answer sheet on the right.',
+        )
+      }
       setPairs(mapRes.pairs)
 
       setStage('grading')
