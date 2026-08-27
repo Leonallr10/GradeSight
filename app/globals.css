@@ -648,6 +648,74 @@ nav a.active {
   border-color: #e5e5e5;
 }
 
+.upload-box.loading {
+  border-style: solid;
+  border-color: #ffd4c4;
+  background: #fffaf8;
+  pointer-events: none;
+  cursor: wait;
+  animation: upload-box-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes upload-box-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(232, 87, 42, 0.08);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(232, 87, 42, 0.06);
+  }
+}
+
+.upload-loading-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid #ffe8df;
+  border-top-color: var(--orange);
+  border-radius: 50%;
+  animation: upload-spin 0.75s linear infinite;
+}
+
+@keyframes upload-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.upload-loading-name {
+  color: #888;
+  font-size: 12px;
+  max-width: 85%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upload-loading-bar {
+  width: 70%;
+  max-width: 200px;
+  height: 4px;
+  background: #ffe8df;
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 2px;
+}
+
+.upload-loading-bar-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--orange);
+  border-radius: 2px;
+  animation: upload-progress 2s ease-out forwards;
+}
+
+@keyframes upload-progress {
+  to {
+    width: 100%;
+  }
+}
+
 .file-icon {
   background: #e95454;
   color: white;
@@ -1074,6 +1142,96 @@ nav a.active {
   background: #40aa45;
 }
 
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.skeleton-bar {
+  border-radius: 6px;
+  background: linear-gradient(90deg, #ececec 25%, #f5f5f5 50%, #ececec 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+.skeleton-status {
+  flex: none;
+}
+
+.skeleton-status .loading-screen {
+  min-height: auto;
+  padding: 24px 16px 8px;
+  background: transparent;
+}
+
+.skeleton-status .loading-screen h2 {
+  font-size: 18px;
+}
+
+.skeleton-status .sparkles {
+  height: 48px;
+  font-size: 32px;
+}
+
+.skeleton-status .progress-stepper {
+  margin-top: 12px;
+}
+
+.skeleton-tabs {
+  display: none;
+}
+
+.skeleton-mapping .panel-title,
+.skeleton-mapping .answer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.skeleton-question {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  gap: 8px 12px;
+  align-items: start;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.skeleton-question .skeleton-bar:nth-child(2) {
+  grid-column: 2 / -1;
+}
+
+.skeleton-question .skeleton-bar:nth-child(3) {
+  grid-column: 2 / 3;
+}
+
+.skeleton-paper {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 24px 16px;
+  min-height: 320px;
+  background: #fafafa;
+  border-radius: 10px;
+}
+
+.skeleton-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  margin-top: 8px;
+  background: #fff;
+  border-radius: 12px;
+}
+
 .error-actions {
   display: flex;
   justify-content: center;
@@ -1373,6 +1531,16 @@ nav a.active {
     padding: 3px;
     border-radius: 20px;
     margin: 0 0 8px;
+  }
+
+  .skeleton-tabs {
+    display: flex;
+  }
+
+  .skeleton-tab {
+    flex: 1;
+    height: 28px;
+    border-radius: 18px;
   }
 
   .mobile-tabs button {

@@ -1,8 +1,9 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { AnswerSheetViewer } from '@/components/AnswerSheetViewer'
 import { GradingSummaryBar } from '@/components/GradingSummary'
+import { MappingSkeleton } from '@/components/MappingSkeleton'
 import { ProgressStepper } from '@/components/ProgressStepper'
 import { QuestionList } from '@/components/QuestionList'
 import { Sidebar, Topbar, UploadScreen } from '@/components/UploadScreen'
@@ -25,8 +26,13 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
-  const data = await res.json()
+  const data = await res.json().catch(() => ({}))
   if (!res.ok) {
+    if (res.status === 413) {
+      throw new Error(
+        'Upload payload too large for the server. Try a shorter document or fewer pages.',
+      )
+    }
     const msg = data?.error || `Request failed: ${url}`
     if (/403|insufficient permissions|Inference Providers on behalf/i.test(String(msg))) {
       throw new Error(
@@ -41,6 +47,59 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
     throw new Error(msg)
   }
   return data as T
+}
+
+async function extractDocument(
+  role: 'question' | 'answer',
+  pages: PageImage[],
+  onProgress: (message: string) => void,
+): Promise<{ blocks: ExtractedBlock[]; via?: string }> {
+  const allBlocks: ExtractedBlock[] = []
+  let via: string | undefined
+  const label = role === 'question' ? 'questions' : 'answers'
+
+  for (let i = 0; i < pages.length; i++) {
+    onProgress(`Extracting ${label}… page ${i + 1} of ${pages.length}`)
+    const res = await postJson<{ blocks: ExtractedBlock[]; via?: string }>('/api/extract', {
+      role,
+      pages: [pages[i]],
+    })
+    allBlocks.push(...res.blocks)
+    via = res.via ?? via
+  }
+
+  return { blocks: allBlocks, via }
+}
+
+async function validateBlocks(
+  blocks: ExtractedBlock[],
+  pages: PageImage[],
+  onProgress: (message: string) => void,
+): Promise<ExtractedBlock[]> {
+  const pageMap = new Map(pages.map((p) => [p.pageIndex, p]))
+  const byPage = new Map<number, ExtractedBlock[]>()
+
+  for (const block of blocks) {
+    const list = byPage.get(block.pageIndex) ?? []
+    list.push(block)
+    byPage.set(block.pageIndex, list)
+  }
+
+  const validatedById = new Map<string, ExtractedBlock>()
+  const entries = [...byPage.entries()]
+  for (let i = 0; i < entries.length; i++) {
+    const [pageIndex, pageBlocks] = entries[i]
+    const page = pageMap.get(pageIndex)
+    if (!page) continue
+    onProgress(`Validating bounding boxes… page ${i + 1} of ${entries.length}`)
+    const res = await postJson<{ blocks: ExtractedBlock[] }>('/api/validate-bbox', {
+      blocks: pageBlocks,
+      pages: [page],
+    })
+    for (const block of res.blocks) validatedById.set(block.id, block)
+  }
+
+  return blocks.map((block) => validatedById.get(block.id) ?? block)
 }
 
 function assertExtractBlocks(
@@ -134,6 +193,7 @@ export default function Page() {
   const [pairs, setPairs] = useState<MappedPair[]>([])
   const [grades, setGrades] = useState<GradeResult[]>([])
   const [summary, setSummary] = useState<GradingSummary | null>(null)
+  const [showSkeleton, setShowSkeleton] = useState(false)
 
   const setFile = (kind: FileKind, file: File | null) => {
     if (file && file.size > 10 * 1024 * 1024) {
@@ -171,40 +231,26 @@ export default function Page() {
       }
 
       setStage('extracting')
-      setStatusMessage('Extracting questions…')
-      const qRes = await postJson<{ blocks: ExtractedBlock[]; via?: string }>('/api/extract', {
-        role: 'question',
-        pages: qPages,
-      })
+      const qRes = await extractDocument('question', qPages, setStatusMessage)
       assertExtractBlocks(qRes.blocks, 'question')
-      setStatusMessage(
-        `Extracting answers…${qRes.via ? ` (questions via ${qRes.via})` : ''}`,
-      )
-      const aRes = await postJson<{ blocks: ExtractedBlock[]; via?: string }>('/api/extract', {
-        role: 'answer',
-        pages: aPages,
-      })
+      if (qRes.via) {
+        setStatusMessage(`Extracting answers… (questions via ${qRes.via})`)
+      }
+      const aRes = await extractDocument('answer', aPages, setStatusMessage)
       assertExtractBlocks(aRes.blocks, 'answer')
       if (aRes.via && aRes.via !== 'hf') {
         console.info(`[extract] answers via ${aRes.via}`)
       }
 
       setStage('validating')
-      setStatusMessage('Validating bounding boxes…')
-      const qVal = await postJson<{ blocks: ExtractedBlock[] }>('/api/validate-bbox', {
-        blocks: qRes.blocks,
-        pages: qPages,
-      })
-      const aVal = await postJson<{ blocks: ExtractedBlock[] }>('/api/validate-bbox', {
-        blocks: aRes.blocks,
-        pages: aPages,
-      })
+      const qValBlocks = await validateBlocks(qRes.blocks, qPages, setStatusMessage)
+      const aValBlocks = await validateBlocks(aRes.blocks, aPages, setStatusMessage)
 
       setStage('mapping')
       setStatusMessage('Matching answers to questions…')
       const mapRes = await postJson<{ pairs: MappedPair[] }>('/api/map-answers', {
-        questions: qVal.blocks,
-        answers: aVal.blocks,
+        questions: qValBlocks,
+        answers: aValBlocks,
       })
       const hasQuestions = mapRes.pairs.some((p) => p.question)
       const unmatchedOnly =
@@ -238,6 +284,7 @@ export default function Page() {
     setError(null)
     setDedupeWarning(null)
     setStatusMessage('')
+    setShowSkeleton(false)
     setPairs([])
     setGrades([])
     setSummary(null)
@@ -253,21 +300,33 @@ export default function Page() {
 
   const showMapping = stage === 'done'
 
+  useEffect(() => {
+    if (!showProcessing || stage === 'error') {
+      setShowSkeleton(false)
+      return
+    }
+    const timer = window.setTimeout(() => setShowSkeleton(true), 2000)
+    return () => window.clearTimeout(timer)
+  }, [showProcessing, stage])
+
   const workspace = (
     <>
       {stage === 'upload' && (
         <UploadScreen files={files} onStart={runPipeline} setFile={setFile} error={error} />
       )}
-      {showProcessing && (
-        <ProgressStepper
-          stage={stage}
-          message={
-            stage === 'error'
-              ? error || 'Something went wrong. Go back and try again.'
-              : statusMessage
-          }
-        />
-      )}
+      {showProcessing &&
+        (showSkeleton && stage !== 'error' ? (
+          <MappingSkeleton stage={stage} message={statusMessage} />
+        ) : (
+          <ProgressStepper
+            stage={stage}
+            message={
+              stage === 'error'
+                ? error || 'Something went wrong. Go back and try again.'
+                : statusMessage
+            }
+          />
+        ))}
       {stage === 'error' && (
         <div className="error-actions">
           <button className="primary" onClick={back}>

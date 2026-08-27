@@ -1,12 +1,14 @@
 'use client'
 
-import { ChangeEvent } from 'react'
+import { ChangeEvent, MouseEvent, useEffect, useRef, useState } from 'react'
 import { ChartPie, Settings, ClipboardList, ArrowLeft, Sparkles, PanelLeft, PanelRight } from 'lucide-react'
 import { IoDocumentTextOutline } from 'react-icons/io5'
 import { IoMdNotificationsOutline } from 'react-icons/io'
 import { FaRegQuestionCircle } from 'react-icons/fa'
 
 type FileKind = 'question' | 'answer'
+
+const UPLOAD_DELAY_MS = 2000
 
 function FileCard({
   kind,
@@ -19,14 +21,66 @@ function FileCard({
 }) {
   const label = kind === 'question' ? 'Question Paper' : 'Answer Sheet'
   const isImage = file?.type.startsWith('image/')
+  const [loading, setLoading] = useState(false)
+  const [pendingName, setPendingName] = useState<string | null>(null)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const clearTimer = () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current)
+      timerRef.current = null
+    }
+  }
+
+  useEffect(() => () => clearTimer(), [])
+
+  const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const next = e.target.files?.[0]
+    if (!next) return
+    clearTimer()
+    setLoading(true)
+    setPendingName(next.name)
+    timerRef.current = setTimeout(() => {
+      onFile(next)
+      setLoading(false)
+      setPendingName(null)
+      timerRef.current = null
+    }, UPLOAD_DELAY_MS)
+    e.target.value = ''
+  }
+
+  const handleRemove = (e: MouseEvent) => {
+    e.preventDefault()
+    clearTimer()
+    setLoading(false)
+    setPendingName(null)
+    onFile(null)
+  }
+
+  if (loading) {
+    return (
+      <div
+        className="upload-box loading"
+        aria-busy="true"
+        aria-live="polite"
+        aria-label={`Uploading ${label}`}
+      >
+        <span className="upload-loading-spinner" aria-hidden="true" />
+        <b>Uploading {label}…</b>
+        {pendingName && <small className="upload-loading-name">{pendingName}</small>}
+        <div className="upload-loading-bar" aria-hidden="true">
+          <span className="upload-loading-bar-fill" />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <label className={`upload-box ${file ? 'filled' : ''}`}>
       <input
         type="file"
         accept=".pdf,.jpeg,.jpg,.png,application/pdf,image/jpeg,image/png"
-        onChange={(e: ChangeEvent<HTMLInputElement>) =>
-          e.target.files?.[0] && onFile(e.target.files[0])
-        }
+        onChange={handleChange}
       />
       {file ? (
         <>
@@ -39,10 +93,7 @@ function FileCard({
             type="button"
             className="remove"
             aria-label={`Remove ${label}`}
-            onClick={(e) => {
-              e.preventDefault()
-              onFile(null)
-            }}
+            onClick={handleRemove}
           >
             ×
           </button>
