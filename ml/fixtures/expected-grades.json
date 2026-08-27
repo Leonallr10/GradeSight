@@ -1,0 +1,15 @@
+{
+  "description": "Optional gold scores for matched fixture pairs (maxScore typically 2–3)",
+  "grades": [
+    { "q": "1(a)", "score": 2, "maxScore": 2 },
+    { "q": "1(b)", "score": 2, "maxScore": 2 },
+    { "q": "3(a)", "score": 2, "maxScore": 2 },
+    { "q": "3(b)", "score": 2, "maxScore": 2 },
+    { "q": "4", "score": 1, "maxScore": 2 },
+    { "q": "7", "score": 2, "maxScore": 2 },
+    { "q": "9(a)", "score": 2, "maxScore": 2 },
+    { "q": "9(b)", "score": 2, "maxScore": 2 },
+    { "q": "10(a)", "score": 2, "maxScore": 2 },
+    { "q": "10(b)", "score": 2, "maxScore": 2 }
+  ]
+}

@@ -16,6 +16,7 @@ export async function POST(req: Request) {
   try {
     const json = await req.json()
     const body = bodySchema.parse(json)
+    // Matching already groups then enriches — pass raw answers through
     const pairs = await mapAnswersToQuestions(
       body.questions as ExtractedBlock[],
       body.answers as ExtractedBlock[],

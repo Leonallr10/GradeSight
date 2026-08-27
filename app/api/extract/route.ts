@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { extractDocument } from '@/lib/hf-qwen'
+import { extractDocument, extractMode } from '@/lib/extract'
 import type { PageImage } from '@/lib/types'
 
 export const maxDuration = 300
@@ -19,14 +19,14 @@ const bodySchema = z.object({
     .max(20),
 })
 
-/** Extraction is HF vision model only (no Gemini multimodal extract). */
+/** Extract via HF Scout (default). Legacy local Qwen when USE_LEGACY_LOCAL_EXTRACT=1. */
 export async function POST(req: Request) {
   try {
     const json = await req.json()
     const body = bodySchema.parse(json)
     const pages = body.pages as PageImage[]
     const blocks = await extractDocument(pages, body.role)
-    return NextResponse.json({ blocks })
+    return NextResponse.json({ blocks, via: extractMode() })
   } catch (err) {
     console.error('/api/extract error:', err)
     const message = err instanceof Error ? err.message : 'Extraction failed'

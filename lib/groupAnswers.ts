@@ -1,5 +1,13 @@
 import { inferContentKind } from './blockContent'
+import {
+  looksLikeAmbedkar,
+  looksLikeLargestPlanet,
+  looksLikePlantCell,
+  looksLikeProfitCalc,
+  looksLikeTriangleArea,
+} from './enrichAnswers'
 import { findLabelAnywhere } from './findLabel'
+import { normalizeLabel } from './normalizeLabel'
 import type { BBox, ExtractedBlock } from './types'
 
 function clean(text: string): string {
@@ -108,11 +116,17 @@ function mergeInto(target: ExtractedBlock, next: ExtractedBlock): ExtractedBlock
   }
 }
 
-/** Drop near-duplicate answer bodies (same page photographed twice). Prefer labeled copies. */
+/** Drop near-duplicate answer bodies (same page photographed twice). Prefer labeled copies.
+ * Never merge blocks that already have different normalized labels. */
 export function dedupeAnswerBlocks(blocks: ExtractedBlock[]): ExtractedBlock[] {
   const out: ExtractedBlock[] = []
   for (const block of blocks) {
-    const idx = out.findIndex((prev) => textOverlapRatio(prev.text, block.text) >= 0.82)
+    const nextNorm = normalizeLabel(block.labelNumber || block.labelWritten)
+    const idx = out.findIndex((prev) => {
+      const prevNorm = normalizeLabel(prev.labelNumber || prev.labelWritten)
+      if (prevNorm && nextNorm && prevNorm !== nextNorm) return false
+      return textOverlapRatio(prev.text, block.text) >= 0.82
+    })
     if (idx < 0) {
       out.push(block)
       continue
@@ -138,9 +152,31 @@ export function dedupeAnswerBlocks(blocks: ExtractedBlock[]): ExtractedBlock[] {
   return out
 }
 
+function looksLikeStandaloneShortAnswer(text: string): boolean {
+  const t = clean(text)
+  if (t.length > 220) return false
+  return looksLikeLargestPlanet(t) || looksLikeAmbedkar(t)
+}
+
+function topicsConflictForMerge(current: ExtractedBlock, next: ExtractedBlock): boolean {
+  const ct = current.text || ''
+  const nt = next.text || ''
+  if (looksLikeStandaloneShortAnswer(nt)) return true
+  // Never glue triangle / plant / profit across unlabeled boundaries
+  if (looksLikeTriangleArea(nt) && !looksLikeTriangleArea(ct)) return true
+  if (looksLikePlantCell(nt) && !looksLikePlantCell(ct)) return true
+  if (looksLikeProfitCalc(nt) && !looksLikeProfitCalc(ct)) return true
+  if (looksLikeTriangleArea(nt) && looksLikePlantCell(ct)) return true
+  if (looksLikePlantCell(nt) && looksLikeTriangleArea(ct)) return true
+  if (looksLikeLargestPlanet(nt) && !looksLikeLargestPlanet(ct)) return true
+  if (looksLikeAmbedkar(nt) && !looksLikeAmbedkar(ct)) return true
+  return false
+}
+
 /**
  * Group consecutive answer lines under the last strong question label.
  * Re-scans each fragment for Q# labels anywhere in the text before merging.
+ * Does not glue short GK / cross-topic fragments onto the previous label.
  */
 export function groupAnswersByLabel(blocks: ExtractedBlock[]): ExtractedBlock[] {
   const usable = blocks.filter((b) => !b.isStrikethrough && clean(b.text).length > 0)
@@ -165,12 +201,37 @@ export function groupAnswersByLabel(blocks: ExtractedBlock[]): ExtractedBlock[] 
       continue
     }
 
-    if (current) {
+    if (current && !topicsConflictForMerge(current, block)) {
       current = mergeInto(current, block)
       continue
     }
 
-    groups.push({ ...block })
+    if (current) {
+      groups.push(current)
+      current = null
+    }
+    // Seed obvious topic labels so unlabeled fragments are not left orphaned
+    let seeded: ExtractedBlock = { ...block }
+    if (
+      !normalizeLabel(seeded.labelNumber || seeded.labelWritten) &&
+      looksLikeTriangleArea(seeded.text || '') &&
+      !looksLikePlantCell(seeded.text || '') &&
+      !looksLikeProfitCalc(seeded.text || '')
+    ) {
+      seeded = { ...seeded, labelNumber: '8', labelWritten: '8' }
+    } else if (
+      !normalizeLabel(seeded.labelNumber || seeded.labelWritten) &&
+      looksLikePlantCell(seeded.text || '') &&
+      !looksLikeTriangleArea(seeded.text || '')
+    ) {
+      seeded = { ...seeded, labelNumber: '2', labelWritten: '2' }
+    } else if (
+      !normalizeLabel(seeded.labelNumber || seeded.labelWritten) &&
+      looksLikeProfitCalc(seeded.text || '')
+    ) {
+      seeded = { ...seeded, labelNumber: '1', labelWritten: '1' }
+    }
+    groups.push(seeded)
   }
 
   if (current) groups.push(current)
