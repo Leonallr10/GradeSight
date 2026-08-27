@@ -10,7 +10,8 @@
     "recheck": "tsx scripts/live-recheck.ts",
     "score": "tsx scripts/score-recheck.ts",
     "eval": "tsx scripts/run-eval.ts",
-    "remap": "tsx scripts/offline-remap.ts"
+    "remap": "tsx scripts/offline-remap.ts",
+    "extract:local": "python -m ml.serve_extract"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
