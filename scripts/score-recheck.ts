@@ -24,12 +24,20 @@ function loadJson<T>(path: string): T | null {
 }
 
 const r = JSON.parse(readFileSync(join(OUT, 'live-report.json'), 'utf8'))
-const expectedLabels =
-  loadJson<ExpectedLabels>(join(ROOT, 'ml/fixtures/expected-labels.json'))
-const expectedPairs =
-  loadJson<ExpectedPairs>(join(ROOT, 'ml/fixtures/expected-pairs.json'))
-const expectedGrades =
-  loadJson<ExpectedGrades>(join(ROOT, 'ml/fixtures/expected-grades.json'))
+const useGold = Boolean(r.fixtures?.useGold)
+const expectedLabels = useGold
+  ? loadJson<ExpectedLabels>(join(ROOT, 'ml/fixtures/expected-labels.json'))
+  : null
+const expectedPairs = useGold
+  ? loadJson<ExpectedPairs>(join(ROOT, 'ml/fixtures/expected-pairs.json'))
+  : null
+const expectedGrades = useGold
+  ? loadJson<ExpectedGrades>(join(ROOT, 'ml/fixtures/expected-grades.json'))
+  : null
+
+if (!useGold) {
+  console.log('Gold F1 fixtures: OFF (report is not default question.pdf/answer.pdf)\n')
+}
 
 const questions = (r.questions || []) as ExtractedBlock[]
 const answers = (r.answers || []) as ExtractedBlock[]

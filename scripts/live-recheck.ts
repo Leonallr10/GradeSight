@@ -1,10 +1,17 @@
 /**
- * Live pipeline recheck: question.pdf + answer.pdf → extract → eval → map → eval → grade → eval
- * Extract uses Next.js /api/extract (local Qwen if LOCAL_EXTRACT_URL set, else HF Scout).
+ * Live pipeline recheck: question + answer PDFs → extract → eval → map → eval → grade → eval
+ * Extract uses Next.js /api/extract (HF Scout by default; legacy local Qwen when USE_LEGACY_LOCAL_EXTRACT=1).
+ *
+ * Env:
+ *   RECHECK_QUESTION / RECHECK_ANSWER — PDF paths (default question.pdf / answer.pdf)
+ *   RECHECK_USE_GOLD=1 — score against ml/fixtures gold (only for default fixtures)
+ *   RECHECK_USE_CACHE=1 — reuse .recheck-out/extract-*.json
+ *   RECHECK_BASE — API base (default http://localhost:3000)
+ *
  * Run while `npm run dev` is up: npx tsx scripts/live-recheck.ts
  */
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs'
-import { join } from 'path'
+import { basename, isAbsolute, join } from 'path'
 import { createCanvas } from '@napi-rs/canvas'
 import { pathToFileURL } from 'url'
 import {
@@ -41,14 +48,35 @@ function loadEnvFile(name: string) {
 loadEnvFile('.env.local')
 loadEnvFile('.env')
 
+function resolvePdfPath(envName: string, fallback: string): string {
+  const raw = (process.env[envName] || fallback).trim()
+  return isAbsolute(raw) ? raw : join(ROOT, raw)
+}
+
+const qPath = resolvePdfPath('RECHECK_QUESTION', 'question.pdf')
+const aPath = resolvePdfPath('RECHECK_ANSWER', 'answer.pdf')
+const qBase = basename(qPath)
+const aBase = basename(aPath)
+const isDefaultFixtures =
+  qBase.toLowerCase() === 'question.pdf' && aBase.toLowerCase() === 'answer.pdf'
+const useGold =
+  process.env.RECHECK_USE_GOLD === '1' ||
+  (process.env.RECHECK_USE_GOLD !== '0' && isDefaultFixtures)
+
 function loadJson<T>(path: string): T | null {
   if (!existsSync(path)) return null
   return JSON.parse(readFileSync(path, 'utf8')) as T
 }
 
-const expectedLabels = loadJson<ExpectedLabels>(join(ROOT, 'ml/fixtures/expected-labels.json'))
-const expectedPairs = loadJson<ExpectedPairs>(join(ROOT, 'ml/fixtures/expected-pairs.json'))
-const expectedGrades = loadJson<ExpectedGrades>(join(ROOT, 'ml/fixtures/expected-grades.json'))
+const expectedLabels = useGold
+  ? loadJson<ExpectedLabels>(join(ROOT, 'ml/fixtures/expected-labels.json'))
+  : null
+const expectedPairs = useGold
+  ? loadJson<ExpectedPairs>(join(ROOT, 'ml/fixtures/expected-pairs.json'))
+  : null
+const expectedGrades = useGold
+  ? loadJson<ExpectedGrades>(join(ROOT, 'ml/fixtures/expected-grades.json'))
+  : null
 
 async function getPdfjs() {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
@@ -108,11 +136,15 @@ async function postJson<T>(url: string, body: unknown, timeoutMs = 600_000): Pro
   }
 }
 
+function cacheTag(): string {
+  return `${qBase.replace(/[^a-zA-Z0-9._-]+/g, '_')}__${aBase.replace(/[^a-zA-Z0-9._-]+/g, '_')}`
+}
+
 async function extractBlocks(
   role: 'question' | 'answer',
   pages: PageImage[],
 ): Promise<{ blocks: ExtractedBlock[]; via: string }> {
-  const cachePath = join(OUT_DIR, `extract-${role}.json`)
+  const cachePath = join(OUT_DIR, `extract-${cacheTag()}-${role}.json`)
   if (existsSync(cachePath) && process.env.RECHECK_USE_CACHE === '1') {
     console.log(`  using cache ${cachePath}`)
     return { blocks: JSON.parse(readFileSync(cachePath, 'utf8')), via: 'cache' }
@@ -145,16 +177,30 @@ function maybeStrict(stagePass: boolean, name: string) {
 
 async function main() {
   mkdirSync(OUT_DIR, { recursive: true })
-  const qPath = join(ROOT, 'question.pdf')
-  const aPath = join(ROOT, 'answer.pdf')
+  if (!existsSync(qPath)) throw new Error(`Question PDF not found: ${qPath}`)
+  if (!existsSync(aPath)) throw new Error(`Answer PDF not found: ${aPath}`)
 
-  console.log('1) Rasterizing question.pdf…')
+  console.log(`Fixtures: q=${qPath}`)
+  console.log(`          a=${aPath}`)
+  console.log(`Gold F1 fixtures: ${useGold ? 'ON' : 'OFF (structural checks only)'}`)
+
+  console.log(`1) Rasterizing ${qBase}…`)
   const qPages = await rasterizePdf(qPath)
-  console.log('2) Rasterizing answer.pdf…')
+  console.log(`2) Rasterizing ${aBase}…`)
   const aPages = await rasterizePdf(aPath)
   writeFileSync(
     join(OUT_DIR, 'pages-meta.json'),
-    JSON.stringify({ questionPages: qPages.length, answerPages: aPages.length }, null, 2),
+    JSON.stringify(
+      {
+        questionPdf: qBase,
+        answerPdf: aBase,
+        questionPages: qPages.length,
+        answerPages: aPages.length,
+        useGold,
+      },
+      null,
+      2,
+    ),
   )
 
   console.log('3) Extracting questions…')
@@ -225,6 +271,7 @@ async function main() {
 
   const report = {
     timestamp: new Date().toISOString(),
+    fixtures: { question: qBase, answer: aBase, useGold },
     extractVia: { questions: qExt.via, answers: aExt.via },
     pages: { question: qPages.length, answer: aPages.length },
     extract: {
