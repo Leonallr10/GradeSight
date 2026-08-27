@@ -1,14 +1,22 @@
 /**
- * Live pipeline recheck: question.pdf + answer.pdf → extract → validate → map → grade
- * Falls back to Gemini vision extract if HF Inference credits are depleted.
+ * Live pipeline recheck: question.pdf + answer.pdf → extract → eval → map → eval → grade → eval
+ * Extract uses Next.js /api/extract (local Qwen if LOCAL_EXTRACT_URL set, else HF Scout).
  * Run while `npm run dev` is up: npx tsx scripts/live-recheck.ts
  */
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs'
 import { join } from 'path'
 import { createCanvas } from '@napi-rs/canvas'
 import { pathToFileURL } from 'url'
-import { parseExtractedBlocks } from '../lib/parseExtract'
-import type { ExtractedBlock, PageImage } from '../lib/types'
+import {
+  evaluateExtract,
+  evaluateMapping,
+  evaluateGrading,
+  summarizeReport,
+  type ExpectedLabels,
+  type ExpectedPairs,
+  type ExpectedGrades,
+} from '../lib/eval'
+import type { ExtractedBlock, GradingSummary, MappedPair, PageImage } from '../lib/types'
 
 const BASE = process.env.RECHECK_BASE || 'http://localhost:3000'
 const ROOT = process.cwd()
@@ -33,19 +41,14 @@ function loadEnvFile(name: string) {
 loadEnvFile('.env.local')
 loadEnvFile('.env')
 
-const EXTRACT_PROMPT = `You extract ONLY gradeable exam items from a page image.
+function loadJson<T>(path: string): T | null {
+  if (!existsSync(path)) return null
+  return JSON.parse(readFileSync(path, 'utf8')) as T
+}
 
-Read ONLY what appears on this page. Do not invent content.
-
-INCLUDE leaf questions/sub-parts and answer blocks with labels.
-EXCLUDE titles, instructions, banners, page numbers.
-
-For answers: one JSON object per question label covering the FULL answer.
-Set labelWritten when a Q# is visible. bbox: [x,y,w,h] normalized 0-1.
-
-Return ONLY a JSON array:
-[{"text":"...","labelWritten":"Q1","labelNumber":"1","bbox":[x,y,w,h],"contentKind":"text","isStrikethrough":false}]
-`
+const expectedLabels = loadJson<ExpectedLabels>(join(ROOT, 'ml/fixtures/expected-labels.json'))
+const expectedPairs = loadJson<ExpectedPairs>(join(ROOT, 'ml/fixtures/expected-pairs.json'))
+const expectedGrades = loadJson<ExpectedGrades>(join(ROOT, 'ml/fixtures/expected-grades.json'))
 
 async function getPdfjs() {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
@@ -105,58 +108,6 @@ async function postJson<T>(url: string, body: unknown, timeoutMs = 600_000): Pro
   }
 }
 
-function stripDataUrl(imageBase64: string): { mime: string; data: string } {
-  const match = imageBase64.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/)
-  if (match) return { mime: match[1], data: match[2] }
-  return { mime: 'image/png', data: imageBase64.replace(/^data:[^;]+;base64,/, '') }
-}
-
-async function extractViaGemini(
-  pages: PageImage[],
-  role: 'question' | 'answer',
-): Promise<ExtractedBlock[]> {
-  const key = process.env.GEMINI_API_KEY
-  if (!key) throw new Error('GEMINI_API_KEY not set for extract fallback')
-  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite'
-  const prefix = role === 'question' ? 'q' : 'a'
-  const roleHint =
-    role === 'question'
-      ? 'Document role: QUESTION PAPER. Extract every answerable question / sub-part.'
-      : 'Document role: ANSWER SHEET. Extract each labelled answer as one block; preserve labels; read handwriting carefully.'
-
-  const all: ExtractedBlock[] = []
-  for (const page of pages) {
-    const { mime, data } = stripDataUrl(page.imageBase64)
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`
-    console.log(`  Gemini extract ${role} page ${page.pageIndex + 1}/${pages.length}…`)
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              { text: `${EXTRACT_PROMPT}\n\n${roleHint}\nPage index: ${page.pageIndex}` },
-              { inline_data: { mime_type: mime, data } },
-            ],
-          },
-        ],
-        generationConfig: { temperature: 0.1, maxOutputTokens: 8192 },
-      }),
-    })
-    const json = await res.json()
-    if (!res.ok) {
-      throw new Error(`Gemini ${res.status}: ${JSON.stringify(json).slice(0, 400)}`)
-    }
-    const text =
-      json?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text || '').join('') ||
-      ''
-    const blocks = parseExtractedBlocks(text, page.pageIndex, prefix)
-    all.push(...blocks)
-  }
-  return all
-}
-
 async function extractBlocks(
   role: 'question' | 'answer',
   pages: PageImage[],
@@ -167,20 +118,12 @@ async function extractBlocks(
     return { blocks: JSON.parse(readFileSync(cachePath, 'utf8')), via: 'cache' }
   }
 
-  try {
-    const res = await postJson<{ blocks: ExtractedBlock[] }>(`${BASE}/api/extract`, {
-      role,
-      pages,
-    })
-    writeFileSync(cachePath, JSON.stringify(res.blocks, null, 2))
-    return { blocks: res.blocks, via: 'hf-api' }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    console.warn(`  HF extract failed (${msg.slice(0, 160)}). Falling back to Gemini…`)
-    const blocks = await extractViaGemini(pages, role)
-    writeFileSync(cachePath, JSON.stringify(blocks, null, 2))
-    return { blocks, via: 'gemini-fallback' }
-  }
+  const res = await postJson<{ blocks: ExtractedBlock[]; via?: string }>(`${BASE}/api/extract`, {
+    role,
+    pages,
+  })
+  writeFileSync(cachePath, JSON.stringify(res.blocks, null, 2))
+  return { blocks: res.blocks, via: res.via || 'api' }
 }
 
 function summarizeBlocks(blocks: ExtractedBlock[], label: string) {
@@ -191,6 +134,12 @@ function summarizeBlocks(blocks: ExtractedBlock[], label: string) {
     const bbox = b.bbox ? 'bbox' : 'no-bbox'
     const extra = b.extraPages?.length ? ` extraPages=${b.extraPages.length}` : ''
     console.log(`  [${ln}] p${b.pageIndex} ${bbox}${extra} ${text}`)
+  }
+}
+
+function maybeStrict(stagePass: boolean, name: string) {
+  if (process.env.EVAL_STRICT === '1' && !stagePass) {
+    throw new Error(`EVAL_STRICT: ${name} stage failed`)
   }
 }
 
@@ -226,11 +175,20 @@ async function main() {
     pages: aPages,
   })
 
+  const stageExtract = evaluateExtract({
+    questions: qVal.blocks,
+    answers: aVal.blocks,
+    expected: expectedLabels,
+  })
+  writeFileSync(join(OUT_DIR, 'stage-extract.json'), JSON.stringify(stageExtract, null, 2))
+  console.log('\n' + summarizeReport(stageExtract))
+  maybeStrict(stageExtract.pass, 'extract')
+
   console.log('6) Mapping…')
-  const mapRes = await postJson<{ pairs: Array<Record<string, unknown>> }>(
-    `${BASE}/api/map-answers`,
-    { questions: qVal.blocks, answers: aVal.blocks },
-  )
+  const mapRes = await postJson<{ pairs: MappedPair[] }>(`${BASE}/api/map-answers`, {
+    questions: qVal.blocks,
+    answers: aVal.blocks,
+  })
   const pairs = mapRes.pairs
   const matched = pairs.filter((p) => p.status === 'matched')
   const unanswered = pairs.filter((p) => p.status === 'unanswered')
@@ -239,19 +197,31 @@ async function main() {
     `\n=== Pairs: ${pairs.length} (matched=${matched.length}, unanswered=${unanswered.length}, unmatched=${unmatched.length}) ===`,
   )
   for (const p of pairs) {
-    const q = p.question as ExtractedBlock | null
-    const a = p.answer as ExtractedBlock | null
     console.log(
-      `  ${p.status} q=${q?.labelNumber ?? '-'} a=${a?.labelNumber ?? '-'} ${a?.bbox ? 'has-bbox' : 'no-bbox'}${a?.extraPages?.length ? ` extra=${a.extraPages.length}` : ''}`,
+      `  ${p.status} q=${p.question?.labelNumber ?? '-'} a=${p.answer?.labelNumber ?? '-'} ${p.answer?.bbox ? 'has-bbox' : 'no-bbox'}${p.answer?.extraPages?.length ? ` extra=${p.answer.extraPages.length}` : ''}`,
     )
   }
 
+  const stageMapping = evaluateMapping({ pairs, expected: expectedPairs })
+  writeFileSync(join(OUT_DIR, 'stage-mapping.json'), JSON.stringify(stageMapping, null, 2))
+  console.log('\n' + summarizeReport(stageMapping))
+  maybeStrict(stageMapping.pass, 'mapping')
+
   console.log('7) Grading…')
-  const gradeRes = await postJson<{ summary: Record<string, unknown> }>(`${BASE}/api/grade`, {
+  const gradeRes = await postJson<{ summary: GradingSummary }>(`${BASE}/api/grade`, {
     pairs,
   })
   console.log('\n=== Grade summary ===')
   console.log(JSON.stringify(gradeRes.summary, null, 2).slice(0, 4000))
+
+  const stageGrading = evaluateGrading({
+    summary: gradeRes.summary,
+    pairs,
+    expected: expectedGrades,
+  })
+  writeFileSync(join(OUT_DIR, 'stage-grading.json'), JSON.stringify(stageGrading, null, 2))
+  console.log('\n' + summarizeReport(stageGrading))
+  maybeStrict(stageGrading.pass, 'grading')
 
   const report = {
     timestamp: new Date().toISOString(),
@@ -274,18 +244,23 @@ async function main() {
       matched: matched.length,
       unanswered: unanswered.length,
       unmatched: unmatched.length,
-      matchedWithBbox: matched.filter((p) => (p.answer as ExtractedBlock | null)?.bbox).length,
+      matchedWithBbox: matched.filter((p) => p.answer?.bbox).length,
       matchedWithExtraPages: matched.filter(
-        (p) => ((p.answer as ExtractedBlock | null)?.extraPages?.length ?? 0) > 0,
+        (p) => (p.answer?.extraPages?.length ?? 0) > 0,
       ).length,
       pairs: pairs.map((p) => ({
         status: p.status,
-        qLabel: (p.question as ExtractedBlock | null)?.labelNumber,
-        aLabel: (p.answer as ExtractedBlock | null)?.labelNumber,
-        hasBbox: Boolean((p.answer as ExtractedBlock | null)?.bbox),
-        extraPages: (p.answer as ExtractedBlock | null)?.extraPages?.length ?? 0,
+        qLabel: p.question?.labelNumber,
+        aLabel: p.answer?.labelNumber,
+        hasBbox: Boolean(p.answer?.bbox),
+        extraPages: p.answer?.extraPages?.length ?? 0,
         similarity: p.similarity,
       })),
+    },
+    stages: {
+      extract: stageExtract,
+      mapping: stageMapping,
+      grading: stageGrading,
     },
     grading: gradeRes.summary,
     questions: qVal.blocks,

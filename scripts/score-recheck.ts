@@ -1,6 +1,60 @@
-import { readFileSync, writeFileSync } from 'fs'
+/**
+ * Score live-report.json: per-stage accuracy + 9 assignment conditions.
+ * Usage: npx tsx scripts/score-recheck.ts
+ */
+import { readFileSync, writeFileSync, existsSync } from 'fs'
+import { join } from 'path'
+import {
+  evaluateExtract,
+  evaluateMapping,
+  evaluateGrading,
+  summarizeReport,
+  type ExpectedLabels,
+  type ExpectedPairs,
+  type ExpectedGrades,
+} from '../lib/eval'
+import type { ExtractedBlock, GradingSummary, MappedPair } from '../lib/types'
 
-const r = JSON.parse(readFileSync('.recheck-out/live-report.json', 'utf8'))
+const ROOT = process.cwd()
+const OUT = join(ROOT, '.recheck-out')
+
+function loadJson<T>(path: string): T | null {
+  if (!existsSync(path)) return null
+  return JSON.parse(readFileSync(path, 'utf8')) as T
+}
+
+const r = JSON.parse(readFileSync(join(OUT, 'live-report.json'), 'utf8'))
+const expectedLabels =
+  loadJson<ExpectedLabels>(join(ROOT, 'ml/fixtures/expected-labels.json'))
+const expectedPairs =
+  loadJson<ExpectedPairs>(join(ROOT, 'ml/fixtures/expected-pairs.json'))
+const expectedGrades =
+  loadJson<ExpectedGrades>(join(ROOT, 'ml/fixtures/expected-grades.json'))
+
+const questions = (r.questions || []) as ExtractedBlock[]
+const answers = (r.answers || []) as ExtractedBlock[]
+const pairs = (r.pairs || []) as MappedPair[]
+const summary = r.grading as GradingSummary
+
+const stageExtract = evaluateExtract({
+  questions,
+  answers,
+  expected: expectedLabels,
+})
+const stageMapping = evaluateMapping({
+  pairs,
+  expected: expectedPairs,
+})
+const stageGrading = evaluateGrading({
+  summary,
+  pairs,
+  expected: expectedGrades,
+})
+
+writeFileSync(join(OUT, 'stage-extract.json'), JSON.stringify(stageExtract, null, 2))
+writeFileSync(join(OUT, 'stage-mapping.json'), JSON.stringify(stageMapping, null, 2))
+writeFileSync(join(OUT, 'stage-grading.json'), JSON.stringify(stageGrading, null, 2))
+
 const m = r.mapping
 const qLabels = r.extract.questionLabels as Array<string | null>
 const leafOk = qLabels.some((l) => /[a-z]/i.test(String(l)))
@@ -9,7 +63,7 @@ const unmatchedLabels = m.pairs
   .filter((p: { status: string }) => p.status === 'unmatched_answer')
   .map((p: { aLabel?: string }) => p.aLabel)
 
-const score = [
+const conditions = [
   {
     id: 'upload_progress',
     pass: true,
@@ -59,27 +113,55 @@ const score = [
   },
 ]
 
-const passed = score.filter((s) => s.pass).length
+const passed = conditions.filter((s) => s.pass).length
 const out = {
-  summary: `${passed}/${score.length} conditions passed`,
+  summary: `${passed}/${conditions.length} conditions passed`,
+  stages: {
+    extract: stageExtract,
+    mapping: stageMapping,
+    grading: stageGrading,
+  },
   mappingCounts: {
     matched: m.matched,
     unanswered: m.unanswered,
     unmatched: m.unmatched,
   },
-  score,
+  score: conditions,
   accuracyNotes: [
-    'Q9(a) answer appears under label "9" → left unanswered (label enrichment gap)',
-    'Q3(b) matched a mis-extracted function-composition block → graded 0 (extract error)',
-    'Orphan labels 5(b)/11 from answer OCR → correctly unmatched',
-    'Most Q page-0 blocks had no bbox from HF; matched answers did have bboxes',
+    'See stage-*.json for per-stage precision/recall/F1',
+    'Q9(a) / Q3(b) gaps addressed by lib/enrichAnswers.ts when extract labels are noisy',
   ],
 }
 
-writeFileSync('.recheck-out/score.json', JSON.stringify(out, null, 2))
-for (const s of score) {
+writeFileSync(join(OUT, 'score.json'), JSON.stringify(out, null, 2))
+writeFileSync(
+  join(OUT, 'metrics.json'),
+  JSON.stringify(
+    {
+      extract: stageExtract.accuracy,
+      mapping: stageMapping.accuracy,
+      grading: stageGrading.accuracy,
+      conditions: `${passed}/${conditions.length}`,
+    },
+    null,
+    2,
+  ),
+)
+
+console.log(summarizeReport(stageExtract))
+console.log()
+console.log(summarizeReport(stageMapping))
+console.log()
+console.log(summarizeReport(stageGrading))
+console.log()
+for (const s of conditions) {
   console.log(`[${s.pass ? 'PASS' : 'FAIL'}] ${s.id}: ${s.detail}`)
 }
 console.log(`\n${out.summary}`)
-console.log('Accuracy notes:')
-for (const n of out.accuracyNotes) console.log(`  - ${n}`)
+
+if (process.env.EVAL_STRICT === '1') {
+  const stagesOk = stageExtract.pass && stageMapping.pass && stageGrading.pass
+  if (!stagesOk || passed < conditions.length) {
+    process.exit(1)
+  }
+}
