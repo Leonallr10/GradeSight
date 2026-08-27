@@ -1,0 +1,19 @@
+{
+  "description": "Gold matched (qLabel, aLabel) pairs for fixture answer sheet",
+  "should_match": [
+    { "q": "1(a)", "a": "1(a)" },
+    { "q": "1(b)", "a": "1(b)" },
+    { "q": "3(a)", "a": "3(a)" },
+    { "q": "3(b)", "a": "3(b)" },
+    { "q": "4", "a": "4" },
+    { "q": "7", "a": "7" },
+    { "q": "8", "a": "8" },
+    { "q": "9(a)", "a": "9(a)" },
+    { "q": "9(b)", "a": "9(b)" },
+    { "q": "10(a)", "a": "10(a)" },
+    { "q": "10(b)", "a": "10(b)" }
+  ],
+  "should_unanswered": ["2", "5", "6(a)", "6(b)"],
+  "out_of_order_q": "1(a)",
+  "expect_multipage": true
+}
