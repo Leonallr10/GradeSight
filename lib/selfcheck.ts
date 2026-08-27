@@ -286,6 +286,211 @@ async function main() {
     'mega 7 → 4 + 8 + 7',
   )
 
+  // --- Triangle + plant-cell mega split (Verna Q8/Q2) ---
+  const triPlant = enrichAnswerLabels([
+    block({
+      id: 'mega2',
+      text:
+        'Given base: 12cm height: 9cm Formula A = (1/2) * b * h A = (1/2) * 12 * 9 A = 54 cm^2\n' +
+        'A plant cell contains a cell wall, cell membrane, cytoplasm, nucleus, chloroplasts and a large central vacuole.',
+      labelNumber: '2',
+      bbox: { x: 0.1, y: 0.2, w: 0.7, h: 0.4 },
+    }),
+  ])
+  check(
+    'triangle_plant_split',
+    triPlant.some((b) => normalizeLabel(b.labelNumber) === '8') &&
+      triPlant.some((b) => normalizeLabel(b.labelNumber) === '2') &&
+      triPlant.length >= 2,
+    'mega 2 → 8 (triangle) + 2 (plant)',
+  )
+  const triPlantProse = triPlant.find((b) => normalizeLabel(b.labelNumber) === '2')
+  check(
+    'triangle_plant_no_fake_diagram',
+    Boolean(triPlantProse) && !triPlantProse?.diagramDescription,
+    'prose plant slice has no fabricated diagramDescription',
+  )
+
+  // --- Profit + triangle mega (page-1 glue under label 1) ---
+  const profitTri = enrichAnswerLabels([
+    block({
+      id: 'mega1',
+      text:
+        'Given CP: 2400 Profit: 15% Profit = 360 SP = 2760\n' +
+        'Area of right angled triangle given base = 12cm height = 9cm Formula A = (1/2) * b * h A = 54 cm^2',
+      labelNumber: '1',
+      bbox: { x: 0.1, y: 0.05, w: 0.7, h: 0.5 },
+    }),
+  ])
+  check(
+    'profit_triangle_split',
+    profitTri.some((b) => normalizeLabel(b.labelNumber) === '1') &&
+      profitTri.some((b) => normalizeLabel(b.labelNumber) === '8') &&
+      profitTri.length >= 2,
+    'mega 1 → 1 (profit) + 8 (triangle)',
+  )
+  const profitTriPairs = await mapAnswersToQuestions(
+    [
+      block({ id: 'pq1', text: 'shopkeeper bicycle profit', labelNumber: '1' }),
+      block({ id: 'pq8', text: 'area of right-angled triangle base 12', labelNumber: '8' }),
+    ],
+    [
+      block({
+        id: 'pa-mega',
+        text:
+          'Given CP: 2400 Profit: 15% SP = 2760\n' +
+          'Area of right angled triangle given base = 12cm height = 9cm A = (1/2) * 12 * 9 = 54 cm^2',
+        labelNumber: '1',
+      }),
+    ],
+    async () => [],
+  )
+  check(
+    'profit_triangle_q8_matched',
+    profitTriPairs.find((p) => p.question?.id === 'pq8')?.status === 'matched',
+    'Q8 matched after profit+triangle split',
+  )
+
+  // --- Photo + plant: parent organelle diagram goes to Q2, not Q9 ---
+  const photoPlant = enrichAnswerLabels([
+    block({
+      id: 'mega9',
+      text:
+        'Photosynthesis is a process by which Green plants prepare Their food using CO2 and H2O.\n' +
+        '6CO2 + 6H2O → C6H12O6 + 6O2\n' +
+        'A diagram of a plant cell with various organelles labeled, including smooth ER, rough ER, nucleus, large control vacuole, amyloplast, cell wall, cell membrane, golgi apparatus, vesicles, vacuole, chloroplast, mitochondrian, cytoplasm.',
+      labelNumber: '9',
+      contentKind: 'diagram',
+      diagramDescription:
+        'A diagram of a plant cell with various organelles labeled, including smooth ER, rough ER, nucleus, large control vacuole, amyloplast, cell wall, cell membrane, golgi apparatus, vesicles, vacuole, chloroplast, mitochondrian, cytoplasm.',
+      bbox: { x: 0.1, y: 0.1, w: 0.8, h: 0.7 },
+    }),
+  ])
+  const pp2 = photoPlant.find((b) => normalizeLabel(b.labelNumber) === '2')
+  const pp9 = photoPlant.find((b) => normalizeLabel(b.labelNumber) === '9')
+  check(
+    'photo_plant_diagram_to_q2',
+    Boolean(pp2?.diagramDescription) &&
+      /smooth\s*er|golgi|organelle/i.test(pp2?.diagramDescription || ''),
+    'plant slice receives organelle diagramDescription',
+  )
+  check(
+    'photo_plant_q9_cleared',
+    Boolean(pp9) && !/smooth\s*er|golgi|amyloplast/i.test(pp9?.diagramDescription || ''),
+    'photosynthesis slice does not keep plant-cell diagram',
+  )
+
+  // --- Map prefers real diagram over short prose twin for Q2 ---
+  const diagQs = [
+    block({ id: 'dq2', text: 'Draw and label a diagram of a plant cell', labelNumber: '2' }),
+    block({ id: 'dq9', text: 'Draw a labeled diagram of photosynthesis', labelNumber: '9' }),
+  ]
+  const diagAs = [
+    block({
+      id: 'da-prose',
+      text: 'A plant cell contains a cell wall, nucleus, chloroplasts and a large central vacuole.',
+      labelNumber: '2',
+      pageIndex: 0,
+    }),
+    block({
+      id: 'da-photo',
+      text:
+        'Photosynthesis is a process by which Green plants prepare food.\n' +
+        'A diagram of a plant cell with various organelles labeled.',
+      labelNumber: '9',
+      contentKind: 'diagram',
+      diagramDescription:
+        'Plant cell organelles: smooth ER, rough ER, nucleus, vacuole, amyloplast, cell wall, chloroplast, golgi apparatus.',
+      pageIndex: 1,
+    }),
+  ]
+  const diagPairs = await mapAnswersToQuestions(diagQs, diagAs, async () => [])
+  const dq2 = diagPairs.find((p) => p.question?.id === 'dq2')
+  check(
+    'prefer_diagram_for_q2',
+    dq2?.status === 'matched' &&
+      Boolean(dq2.answer?.diagramDescription) &&
+      /organelle|smooth\s*er|golgi/i.test(dq2.answer?.diagramDescription || ''),
+    'Q2 maps to organelle diagram, not prose twin',
+  )
+  const dq9 = diagPairs.find((p) => p.question?.id === 'dq9')
+  check(
+    'q9_no_plant_diagram',
+    dq9?.status === 'matched' &&
+      !/smooth\s*er|amyloplast|golgi/i.test(dq9.answer?.diagramDescription || ''),
+    'Q9 matched without plant-cell organelle diagram',
+  )
+
+  // --- Short GK content→label repair ---
+  const gkRepair = enrichAnswerLabels([
+    block({
+      id: 'gk4',
+      text: 'Jaipur is the largest planet in solar system',
+      labelNumber: undefined,
+      bbox: { x: 0.1, y: 0.5, w: 0.5, h: 0.05 },
+    }),
+    block({
+      id: 'gk10',
+      text: 'DR. B. R. Ambedkar',
+      labelNumber: undefined,
+      bbox: { x: 0.1, y: 0.55, w: 0.4, h: 0.05 },
+    }),
+  ])
+  check(
+    'gk_label_repair',
+    gkRepair.some((b) => normalizeLabel(b.labelNumber) === '4') &&
+      gkRepair.some((b) => normalizeLabel(b.labelNumber) === '10'),
+    'planet → 4, Ambedkar → 10',
+  )
+
+  // --- Map: split mega-2 matches Q8 and Q2; topical rematch Q4/Q10 ---
+  const vernaQs = [
+    block({ id: 'vq2', text: 'Draw and label a diagram of a plant cell', labelNumber: '2' }),
+    block({ id: 'vq4', text: 'Which is the largest planet in our solar system?', labelNumber: '4' }),
+    block({ id: 'vq8', text: 'Find the area of a right-angled triangle with base 12 cm', labelNumber: '8' }),
+    block({
+      id: 'vq10',
+      text: 'Who is known as the Father of the Indian Constitution?',
+      labelNumber: '10',
+    }),
+  ]
+  const vernaAs = [
+    block({
+      id: 'va-mega',
+      text:
+        'Given base: 12cm height: 9cm Formula A = (1/2) * b * h A = 54 cm^2\n' +
+        'A plant cell contains a cell wall, nucleus, chloroplasts and a large central vacuole.',
+      labelNumber: '2',
+    }),
+    block({
+      id: 'va4',
+      text: 'Jaipur is the largest planet in solar system',
+      labelNumber: undefined,
+    }),
+    block({ id: 'va10', text: 'DR. B. R. Ambedkar', labelNumber: undefined }),
+  ]
+  const vernaPairs = await mapAnswersToQuestions(vernaQs, vernaAs, async () => [])
+  check(
+    'verna_q8_matched',
+    vernaPairs.find((p) => p.question?.id === 'vq8')?.status === 'matched',
+    'Q8 matched to triangle half',
+  )
+  check(
+    'verna_q2_matched',
+    vernaPairs.find((p) => p.question?.id === 'vq2')?.status === 'matched',
+    'Q2 matched to plant-cell half',
+  )
+  check(
+    'verna_q4_matched',
+    vernaPairs.find((p) => p.question?.id === 'vq4')?.status === 'matched',
+    'Q4 matched via planet repair/rematch',
+  )
+  check(
+    'verna_q10_matched',
+    vernaPairs.find((p) => p.question?.id === 'vq10')?.status === 'matched',
+    'Q10 matched via Ambedkar repair/rematch',
+  )
+
   // --- Map-time enrich: mislabeled 3(b) composition matches Q1(b) ---
   const mapEnrichQs = [
     block({ id: 'mq1b', text: 'find g(f(3))', labelNumber: '1(b)' }),
