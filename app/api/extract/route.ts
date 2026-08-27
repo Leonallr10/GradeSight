@@ -19,7 +19,7 @@ const bodySchema = z.object({
     .max(20),
 })
 
-/** Extract via local Qwen (LOCAL_EXTRACT_URL) or HF Scout — no Gemini cascade. */
+/** Extract via HF Scout (default). Legacy local Qwen when USE_LEGACY_LOCAL_EXTRACT=1. */
 export async function POST(req: Request) {
   try {
     const json = await req.json()

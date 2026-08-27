@@ -1,7 +1,8 @@
 import type { DocumentRole, ExtractedBlock, PageImage } from './types'
 
 /**
- * Call local FastAPI extract server (ml/serve_extract.py).
+ * Call legacy local FastAPI extract server (ml/serve_extract.py).
+ * Opt-in only: set USE_LEGACY_LOCAL_EXTRACT=1 and LOCAL_EXTRACT_URL in .env.local.
  * Env: LOCAL_EXTRACT_URL=http://127.0.0.1:8001
  */
 export function getLocalExtractUrl(): string | null {
