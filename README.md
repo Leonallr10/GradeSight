@@ -7,8 +7,8 @@ Teacher-facing **Next.js** app: upload a question paper + handwritten answer she
 | Layer | Choice |
 |-------|--------|
 | Framework | Next.js 16 (App Router) |
-| Extraction (deploy) | HF Inference VL — `meta-llama/Llama-4-Scout-17B-16E-Instruct` |
-| Extraction (local / offline) | Fine-tuned **Qwen2.5-VL-3B** via `ml/serve_extract.py` (`LOCAL_EXTRACT_URL`) |
+| Extraction (default / deploy) | HF Inference VL — `meta-llama/Llama-4-Scout-17B-16E-Instruct:novita` |
+| Extraction (legacy offline dev) | **Qwen2.5-VL-3B** via `ml/serve_extract.py` — requires `USE_LEGACY_LOCAL_EXTRACT=1` |
 | Matching | Label normalize + cosine (lexical embeddings) |
 | Bbox repair | Same HF vision model (when HF mode) |
 | Grading | Groq (`openai/gpt-oss-20b`) |
@@ -19,33 +19,34 @@ Teacher-facing **Next.js** app: upload a question paper + handwritten answer she
 ```bash
 pnpm install   # or npm install
 cp .env.example .env.local
-# fill HF_TOKEN and GROQ_API_KEY (required for deploy mode)
+# HF_TOKEN: fine-grained token with "Make calls to Inference Providers"
+# HF_QWEN_MODEL defaults to meta-llama/Llama-4-Scout-17B-16E-Instruct:novita
+# fill GROQ_API_KEY (required for grading)
 pnpm dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
 
-### Local extract (optional — avoid HF quota)
+### Legacy local extract (optional — offline dev when HF quota exhausted)
 
 ```bash
 cd ml && pip install -r requirements.txt
-# train in Colab: ml/notebooks/finetune_extract.ipynb
-# or: python train.py …
-python serve_extract.py
+npm run extract:local   # from repo root
 ```
 
 In `.env.local`:
 
 ```env
+USE_LEGACY_LOCAL_EXTRACT=1
 LOCAL_EXTRACT_URL=http://127.0.0.1:8001
 ```
 
-Leave unset on Vercel (live URL uses HF Scout + Groq). **No cascading Gemini fallback.**
+Do **not** set these on Vercel. Production and normal dev use HF Scout + Groq.
 
 ## Pipeline
 
 1. **Upload** — PDF/images rasterized to per-page PNGs  
-2. **`POST /api/extract`** — local Qwen **or** HF Scout (text + bbox)  
+2. **`POST /api/extract`** — HF Scout (default) or legacy local Qwen when opted in  
 3. **`POST /api/validate-bbox`** — validate boxes; optional HF localize  
 4. **`POST /api/map-answers`** — exact label match, then lexical similarity  
 5. **`POST /api/grade`** — Groq batch score/feedback + summary  
@@ -75,13 +76,13 @@ Gold fixtures: [`ml/fixtures/`](ml/fixtures/). Model CER/WER/IoU: `python ml/eva
 
 See [`ml/README.md`](ml/README.md). Pipeline: preprocess → load Qwen2.5-VL-3B → LoRA → evaluate → export adapter → local FastAPI.
 
-Scout is used for the **live URL** because Vercel cannot load LoRA weights; local mode is for training demos and avoiding API exhaustion.
+Scout is used for the **live URL** and default dev. Legacy local Qwen is opt-in for offline training demos when HF credits are exhausted.
 
 ## Deploy (Vercel)
 
 1. `pnpm build` locally to verify.  
 2. Import the repo in the Vercel dashboard.  
-3. Env: `HF_TOKEN`, `GROQ_API_KEY` (do not set `LOCAL_EXTRACT_URL` on Vercel).  
+3. Env: `HF_TOKEN`, `GROQ_API_KEY` only (do not set `USE_LEGACY_LOCAL_EXTRACT` or `LOCAL_EXTRACT_URL`).  
 4. `vercel.json` sets API `maxDuration: 300`.
 
 ## Project layout
