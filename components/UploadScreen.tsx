@@ -1,10 +1,9 @@
 'use client'
 
 import { ChangeEvent } from 'react'
-import { ChartPie, Settings, ClipboardList, ArrowLeft, Sparkles } from 'lucide-react'
+import { ChartPie, Settings, ClipboardList, ArrowLeft, Sparkles, PanelLeft, PanelRight } from 'lucide-react'
 import { IoDocumentTextOutline } from 'react-icons/io5'
 import { IoMdNotificationsOutline } from 'react-icons/io'
-import { VscLayoutSidebarLeftOff } from 'react-icons/vsc'
 import { FaRegQuestionCircle } from 'react-icons/fa'
 
 type FileKind = 'question' | 'answer'
@@ -122,70 +121,78 @@ export function Sidebar({
 }) {
   return (
     <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
-      <div className="brand">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/icons/logo.png" alt="VedaAI logo" className="brand-logo" />
-        {!collapsed && <strong>VedaAI</strong>}
-        <button
-          type="button"
-          className="collapse"
-          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          aria-expanded={!collapsed}
-          onClick={onToggle}
-        >
-          <VscLayoutSidebarLeftOff size={18} />
-        </button>
-      </div>
-      {collapsed ? (
-        <button type="button" className="toolkit icon-only" aria-label="AI Teacher's Toolkit">
+      <div className="sidebar-top">
+        <div className="brand">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/icons/generate.png" alt="" className="toolkit-spark" aria-hidden />
-        </button>
-      ) : (
-        <button type="button" className="toolkit">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/icons/generate.png" alt="" className="toolkit-spark" aria-hidden />
-          AI Teacher&apos;s Toolkit
-        </button>
-      )}
-      <nav aria-label="Main navigation">
-        <a title="Home">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/icons/home-Icon.png" alt="" className="nav-asset" />
-          {!collapsed && <span>Home</span>}
-        </a>
-        <a title="My Classroom">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/icons/classroom.png" alt="" className="nav-asset" />
-          {!collapsed && <span>My Classroom</span>}
-        </a>
-        <a title="Assignments">
-          <IoDocumentTextOutline size={18} className="nav-lib-icon" />
-          {!collapsed && <span>Assignments</span>}
-        </a>
-        <a className="active" title="Exams">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/icons/exam.png" alt="" className="nav-asset" />
-          {!collapsed && <span>Exams</span>}
-        </a>
-        <a title="My Library">
-          <ChartPie size={18} className="nav-lib-icon" strokeWidth={1.75} />
-          {!collapsed && <span>My Library</span>}
-        </a>
-      </nav>
-      <a className="settings" title="Settings">
-        <Settings size={18} className="nav-lib-icon" strokeWidth={1.75} />
-        {!collapsed && <span>Settings</span>}
-      </a>
-      <div className="school">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/school.png" alt="" className="school-logo" />
-        {!collapsed && (
-          <div>
-            <b>Delhi Public School</b>
-            <small>Bokaro Steel City</small>
-          </div>
+          <img src="/icons/logo.png" alt="VedaAI logo" className="brand-logo" />
+          {!collapsed && <strong>VedaAI</strong>}
+          <button
+            type="button"
+            className="sidebar-toggle"
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-expanded={!collapsed}
+            onClick={onToggle}
+          >
+            {collapsed ? (
+              <PanelRight size={18} strokeWidth={1.75} aria-hidden />
+            ) : (
+              <PanelLeft size={18} strokeWidth={1.75} aria-hidden />
+            )}
+          </button>
+        </div>
+        {collapsed ? (
+          <button type="button" className="toolkit icon-only" aria-label="AI Teacher's Toolkit">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/icons/generate.png" alt="" className="toolkit-spark" aria-hidden />
+          </button>
+        ) : (
+          <button type="button" className="toolkit">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/icons/generate.png" alt="" className="toolkit-spark" aria-hidden />
+            AI Teacher&apos;s Toolkit
+          </button>
         )}
+        <nav aria-label="Main navigation">
+          <a title="Home">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/icons/home-Icon.png" alt="" className="nav-asset" />
+            {!collapsed && <span>Home</span>}
+          </a>
+          <a title="My Classroom">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/icons/classroom.png" alt="" className="nav-asset" />
+            {!collapsed && <span>My Classroom</span>}
+          </a>
+          <a title="Assignments">
+            <IoDocumentTextOutline size={18} className="nav-lib-icon" />
+            {!collapsed && <span>Assignments</span>}
+          </a>
+          <a className="active" title="Exams">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/icons/exam.png" alt="" className="nav-asset" />
+            {!collapsed && <span>Exams</span>}
+          </a>
+          <a title="My Library">
+            <ChartPie size={18} className="nav-lib-icon" strokeWidth={1.75} />
+            {!collapsed && <span>My Library</span>}
+          </a>
+        </nav>
+      </div>
+      <div className="sidebar-bottom">
+        <a className="settings" title="Settings">
+          <Settings size={18} className="nav-lib-icon" strokeWidth={1.75} />
+          {!collapsed && <span>Settings</span>}
+        </a>
+        <div className="school">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/school.png" alt="" className="school-logo" />
+          {!collapsed && (
+            <div>
+              <b>Delhi Public School</b>
+              <small>Bokaro Steel City</small>
+            </div>
+          )}
+        </div>
       </div>
     </aside>
   )

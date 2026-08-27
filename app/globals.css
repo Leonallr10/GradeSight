@@ -59,7 +59,7 @@ a {
 }
 
 .desktop-side.narrow {
-  width: 84px;
+  width: 76px;
   padding: 12px 0 12px 12px;
 }
 
@@ -84,8 +84,22 @@ a {
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
   border: none;
   opacity: 1;
-  transition: padding .2s ease, border-radius .2s ease;
+  transition: width .2s ease, padding .2s ease, border-radius .2s ease;
   overflow: hidden;
+}
+
+.sidebar-top {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.sidebar-bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: auto;
 }
 
 .brand {
@@ -139,22 +153,29 @@ a {
   font-size: 13px;
 }
 
-.collapse {
+.sidebar-toggle {
   margin-left: auto;
-  color: #aaa;
-  font-size: 14px;
+  color: #555;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 5px;
-  border-radius: 7px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 8px;
   flex: none;
+  flex-shrink: 0;
   transition: background .15s, color .15s;
 }
 
-.collapse:hover {
+.sidebar-toggle:hover {
   background: #f2f2f2;
-  color: #555;
+  color: #1a1a1a;
+}
+
+.sidebar-toggle svg {
+  display: block;
+  flex: none;
 }
 
 .toolkit {
@@ -287,39 +308,73 @@ nav a.active {
   background: #111;
 }
 
-/* Collapsed sidebar */
+/* Collapsed sidebar — icon-only rail */
 .sidebar.collapsed {
-  padding: 16px 8px;
+  width: 64px;
+  padding: 14px 8px;
   align-items: center;
   border-radius: 14px;
 }
 
 .sidebar.collapsed .brand {
-  justify-content: center;
   flex-direction: column;
-  gap: 10px;
-  margin-bottom: 20px;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  width: 100%;
 }
 
-.sidebar.collapsed .brand .collapse {
+.sidebar.collapsed .brand .sidebar-toggle {
   margin-left: 0;
+}
+
+.sidebar.collapsed .brand-logo {
+  width: 30px;
+  height: 30px;
+}
+
+.sidebar.collapsed .toolkit.icon-only {
+  width: 40px;
+  height: 40px;
+  margin: 0 auto 18px;
+}
+
+.sidebar.collapsed nav {
+  width: 100%;
+  align-items: center;
 }
 
 .sidebar.collapsed nav a,
 .sidebar.collapsed .settings {
   justify-content: center;
-  padding: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 10px 0;
+  gap: 0;
+}
+
+.sidebar.collapsed nav a span,
+.sidebar.collapsed .settings span,
+.sidebar.collapsed .school > div {
+  display: none;
 }
 
 .sidebar.collapsed .school {
   justify-content: center;
-  padding: 8px;
+  padding: 6px 0;
   background: transparent;
+  width: 100%;
 }
 
 .sidebar.collapsed .school-logo {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
+}
+
+.sidebar.collapsed .sidebar-bottom {
+  width: 100%;
+  align-items: center;
 }
 
 /* Topbar + workspace — Figma spec:
