@@ -1142,96 +1142,6 @@ nav a.active {
   background: #40aa45;
 }
 
-@keyframes skeleton-shimmer {
-  0% {
-    background-position: -200% 0;
-  }
-  100% {
-    background-position: 200% 0;
-  }
-}
-
-.skeleton-bar {
-  border-radius: 6px;
-  background: linear-gradient(90deg, #ececec 25%, #f5f5f5 50%, #ececec 75%);
-  background-size: 200% 100%;
-  animation: skeleton-shimmer 1.4s ease-in-out infinite;
-}
-
-.skeleton-status {
-  flex: none;
-}
-
-.skeleton-status .loading-screen {
-  min-height: auto;
-  padding: 24px 16px 8px;
-  background: transparent;
-}
-
-.skeleton-status .loading-screen h2 {
-  font-size: 18px;
-}
-
-.skeleton-status .sparkles {
-  height: 48px;
-  font-size: 32px;
-}
-
-.skeleton-status .progress-stepper {
-  margin-top: 12px;
-}
-
-.skeleton-tabs {
-  display: none;
-}
-
-.skeleton-mapping .panel-title,
-.skeleton-mapping .answer-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.skeleton-question {
-  display: grid;
-  grid-template-columns: 28px 1fr auto;
-  gap: 8px 12px;
-  align-items: start;
-  padding: 14px 0;
-  border-bottom: 1px solid var(--line);
-}
-
-.skeleton-question .skeleton-bar:nth-child(2) {
-  grid-column: 2 / -1;
-}
-
-.skeleton-question .skeleton-bar:nth-child(3) {
-  grid-column: 2 / 3;
-}
-
-.skeleton-paper {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 24px 16px;
-  min-height: 320px;
-  background: #fafafa;
-  border-radius: 10px;
-}
-
-.skeleton-summary {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  padding: 12px 16px;
-  margin-top: 8px;
-  background: #fff;
-  border-radius: 12px;
-}
-
 .error-actions {
   display: flex;
   justify-content: center;
@@ -1531,16 +1441,6 @@ nav a.active {
     padding: 3px;
     border-radius: 20px;
     margin: 0 0 8px;
-  }
-
-  .skeleton-tabs {
-    display: flex;
-  }
-
-  .skeleton-tab {
-    flex: 1;
-    height: 28px;
-    border-radius: 18px;
   }
 
   .mobile-tabs button {

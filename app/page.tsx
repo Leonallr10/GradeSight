@@ -1,9 +1,8 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { AnswerSheetViewer } from '@/components/AnswerSheetViewer'
 import { GradingSummaryBar } from '@/components/GradingSummary'
-import { MappingSkeleton } from '@/components/MappingSkeleton'
 import { ProgressStepper } from '@/components/ProgressStepper'
 import { QuestionList } from '@/components/QuestionList'
 import { Sidebar, Topbar, UploadScreen } from '@/components/UploadScreen'
@@ -193,7 +192,6 @@ export default function Page() {
   const [pairs, setPairs] = useState<MappedPair[]>([])
   const [grades, setGrades] = useState<GradeResult[]>([])
   const [summary, setSummary] = useState<GradingSummary | null>(null)
-  const [showSkeleton, setShowSkeleton] = useState(false)
 
   const setFile = (kind: FileKind, file: File | null) => {
     if (file && file.size > 10 * 1024 * 1024) {
@@ -284,7 +282,6 @@ export default function Page() {
     setError(null)
     setDedupeWarning(null)
     setStatusMessage('')
-    setShowSkeleton(false)
     setPairs([])
     setGrades([])
     setSummary(null)
@@ -300,33 +297,21 @@ export default function Page() {
 
   const showMapping = stage === 'done'
 
-  useEffect(() => {
-    if (!showProcessing || stage === 'error') {
-      setShowSkeleton(false)
-      return
-    }
-    const timer = window.setTimeout(() => setShowSkeleton(true), 2000)
-    return () => window.clearTimeout(timer)
-  }, [showProcessing, stage])
-
   const workspace = (
     <>
       {stage === 'upload' && (
         <UploadScreen files={files} onStart={runPipeline} setFile={setFile} error={error} />
       )}
-      {showProcessing &&
-        (showSkeleton && stage !== 'error' ? (
-          <MappingSkeleton stage={stage} message={statusMessage} />
-        ) : (
-          <ProgressStepper
-            stage={stage}
-            message={
-              stage === 'error'
-                ? error || 'Something went wrong. Go back and try again.'
-                : statusMessage
-            }
-          />
-        ))}
+      {showProcessing && (
+        <ProgressStepper
+          stage={stage}
+          message={
+            stage === 'error'
+              ? error || 'Something went wrong. Go back and try again.'
+              : statusMessage
+          }
+        />
+      )}
       {stage === 'error' && (
         <div className="error-actions">
           <button className="primary" onClick={back}>
