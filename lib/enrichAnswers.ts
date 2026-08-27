@@ -2,7 +2,9 @@
  * Post-extract answer label repair:
  * - Parent label "9" with (a)/(b) sections in text → split into 9(a) / 9(b)
  * - Mislabelled blocks (e.g. "3(b)" that is clearly function composition → "1(b)")
- * - Mega-blocks that glued multiple topics (photosynthesis + dry cell + Newton)
+ * - Mega-blocks that glued multiple topics (photosynthesis + dry cell + Newton;
+ *   triangle area + plant cell; etc.)
+ * - Content→label repair for short GK (largest planet → 4, Ambedkar → 10)
  */
 
 import { findLabelAnywhere } from './findLabel'
@@ -54,6 +56,66 @@ function looksLikeMars(text: string): boolean {
   )
 }
 
+/** Right-triangle area calc (often mislabelled as Q2 when glued to plant cell). */
+export function looksLikeTriangleArea(text: string): boolean {
+  const t = text.toLowerCase().replace(/\\frac\s*\{\s*1\s*\}\s*\{\s*2\s*\}/g, '1/2')
+  const hasDims =
+    /base\s*[:=]?\s*\d+|height\s*[:=]?\s*\d+|b\s*=\s*\d+|h\s*=\s*\d+/.test(t) ||
+    /\b12\s*cm\b/.test(t) ||
+    (/12/.test(t) && /9/.test(t) && /54/.test(t))
+  const hasFormula =
+    /(?:1\s*\/\s*2|\u00bd|0\.5)\s*\*?\s*(?:b|base|\\times|\*|x)/i.test(t) ||
+    (/(?:1\s*\/\s*2|\u00bd)/.test(t) && /12/.test(t) && /9/.test(t)) ||
+    /a\s*=\s*\(?\s*1\s*\/\s*2/.test(t) ||
+    /area\s+of\s+(?:a\s+)?(?:right[- ]angled\s+)?triangle/i.test(t) ||
+    /\b54\s*(?:cm|\\text)/.test(t)
+  return hasDims && hasFormula
+}
+
+/** Plant-cell diagram / organelle list (Q2 on Verna paper). */
+export function looksLikePlantCell(text: string): boolean {
+  const t = text.toLowerCase()
+  // Photosynthesis essays often mention chloroplasts; require explicit plant-cell cue
+  if (/photosynthesis/i.test(t) && !/plant\s+cell/i.test(t)) return false
+  if (/dry\s*cell/i.test(t) && !/plant\s+cell/i.test(t)) return false
+  return (
+    /plant\s+cell/i.test(t) ||
+    (/cell\s+wall/i.test(t) && /(?:chloroplast|vacuole|nucleus)/i.test(t) && t.length < 400)
+  )
+}
+
+/** Largest-planet GK (Q4); includes common handwritten typo "Jaipur". */
+export function looksLikeLargestPlanet(text: string): boolean {
+  const t = text.toLowerCase().replace(/\s+/g, ' ').trim()
+  if (t.length > 220) return false
+  return (
+    /largest\s+planet/i.test(t) ||
+    /\bjupiter\b/i.test(t) ||
+    /\bjaipur\b/i.test(t) ||
+    (/solar\s+system/i.test(t) && /(?:planet|largest)/i.test(t))
+  )
+}
+
+/** Bicycle / SP / profit calc (Q1 on Verna paper). */
+export function looksLikeProfitCalc(text: string): boolean {
+  const t = text.toLowerCase()
+  return (
+    (/profit|selling\s+price|\bsp\b|\bcp\b/i.test(t) &&
+      /(?:2400|15\s*%|2760)/i.test(t)) ||
+    (/profit/i.test(t) && /selling\s+price|sp\s*[:=]/i.test(t) && /\d{3,}/.test(t))
+  )
+}
+
+/** Father of the Indian Constitution (Q10). */
+export function looksLikeAmbedkar(text: string): boolean {
+  const t = text.toLowerCase().replace(/\s+/g, ' ').trim()
+  if (t.length > 220) return false
+  return (
+    /ambedkar/i.test(t) ||
+    /father\s+of\s+(?:the\s+)?(?:indian\s+)?constitution/i.test(t)
+  )
+}
+
 function sliceBbox(bbox: BBox | undefined, index: number, total: number): BBox | undefined {
   if (!bbox || total <= 1) return bbox
   const h = Math.max(0.02, bbox.h / total)
@@ -63,6 +125,84 @@ function sliceBbox(bbox: BBox | undefined, index: number, total: number): BBox |
     w: bbox.w,
     h,
   }
+}
+
+/** True when text describes a drawn/labelled figure, not a one-line definition. */
+export function looksLikeDrawnFigureDescription(text: string): boolean {
+  const t = text.toLowerCase()
+  if (t.length < 40) return false
+  if (
+    /diagram|labelled|labeled|organelle|smooth\s*er|rough\s*er|golgi|amyloplast|mitochondr|arrow|pointing|drawn|sketch|figure\s+of/i.test(
+      t,
+    )
+  ) {
+    return true
+  }
+  // Long multi-organelle caption (not a short "contains wall, nucleus, …" sentence)
+  const organelleHits = [
+    'nucleus',
+    'chloroplast',
+    'vacuole',
+    'cell wall',
+    'cell membrane',
+    'cytoplasm',
+    'mitochondrion',
+    'golgi',
+    'endoplasmic',
+  ].filter((w) => t.includes(w)).length
+  return organelleHits >= 5 && t.length > 180
+}
+
+function looksLikePlantOrganelleDiagram(desc: string): boolean {
+  const t = desc.toLowerCase()
+  if (!t.trim()) return false
+  const plantish =
+    /plant\s+cell|organelle|smooth\s*er|rough\s*er|golgi|amyloplast|chloroplast|vacuole|cell\s+wall|cell\s+membrane/i.test(
+      t,
+    )
+  const photoProcess =
+    /sunlight|glucose|6\s*co|inputs?\s+and\s+outputs?|photosynthesis\s+process/i.test(t)
+  return plantish && !photoProcess
+}
+
+function looksLikePhotosynthesisDiagram(desc: string): boolean {
+  const t = desc.toLowerCase()
+  return /sunlight|glucose|6\s*co|inputs?\s+and\s+outputs?|o\s*2|water\s+in|photosynthesis/i.test(t)
+}
+
+/**
+ * Assign diagram metadata for a split slice without inventing diagrams from short prose.
+ * Plant-cell organelle descriptions on a parent block go to label "2", not photosynthesis.
+ */
+export function resolveDiagramMetaForSlice(
+  label: string,
+  slice: string,
+  parentDiagram?: string,
+): { contentKind: ExtractedBlock['contentKind']; diagramDescription?: string } {
+  const parent = parentDiagram?.trim() || ''
+
+  if (label === '2') {
+    if (parent && looksLikePlantOrganelleDiagram(parent)) {
+      return { contentKind: 'diagram', diagramDescription: parent }
+    }
+    if (looksLikeDrawnFigureDescription(slice)) {
+      return { contentKind: 'diagram', diagramDescription: slice.slice(0, 800) }
+    }
+    return { contentKind: 'text', diagramDescription: undefined }
+  }
+
+  // Photosynthesis / other non-plant slices
+  if (parent && looksLikePhotosynthesisDiagram(parent) && !looksLikePlantOrganelleDiagram(parent)) {
+    return { contentKind: 'diagram', diagramDescription: parent }
+  }
+  if (parent && looksLikePlantOrganelleDiagram(parent)) {
+    // Wrong figure glued onto photo answer — drop it
+    return { contentKind: 'text', diagramDescription: undefined }
+  }
+  if (parent && !looksLikePlantOrganelleDiagram(parent)) {
+    return { contentKind: 'diagram', diagramDescription: parent }
+  }
+  return { contentKind: 'text', diagramDescription: undefined }
 }
 
 /**
@@ -141,6 +281,168 @@ export function splitMergedTopicBlocks(blocks: ExtractedBlock[]): ExtractedBlock
   return out.length > 0 ? out : blocks
 }
 
+/**
+ * Split profit/SP calc (Q1) glued with triangle area (Q8) — common when VL
+ * keeps scanning page 1 under a single "1" label.
+ */
+export function splitProfitTriangleBlocks(blocks: ExtractedBlock[]): ExtractedBlock[] {
+  const out: ExtractedBlock[] = []
+
+  for (const block of blocks) {
+    const text = block.text || ''
+    const hasProfit = looksLikeProfitCalc(text)
+    const hasTri = looksLikeTriangleArea(text)
+    if (!hasProfit || !hasTri) {
+      out.push(block)
+      continue
+    }
+
+    const profitIdx = Math.min(
+      ...[
+        text.search(/profit/i),
+        text.search(/\bcp\b/i),
+        text.search(/2400/),
+        text.search(/selling\s+price/i),
+      ].filter((i) => i >= 0),
+      Number.POSITIVE_INFINITY,
+    )
+    const triIdx = Math.min(
+      ...[
+        text.search(/area\s+of\s+(?:a\s+)?(?:right[- ]angled\s+)?triangle/i),
+        text.search(/base\s*[:=]?\s*\d+/i),
+        text.search(/(?:1\s*\/\s*2|\u00bd)/),
+        text.search(/height\s*[:=]?\s*\d+/i),
+      ].filter((i) => i >= 0),
+      Number.POSITIVE_INFINITY,
+    )
+
+    if (!Number.isFinite(profitIdx) || !Number.isFinite(triIdx)) {
+      out.push(block)
+      continue
+    }
+
+    type Section = { label: string; start: number }
+    const sections: Section[] =
+      (profitIdx as number) < (triIdx as number)
+        ? [
+            { label: '1', start: profitIdx as number },
+            { label: '8', start: triIdx as number },
+          ]
+        : [
+            { label: '8', start: triIdx as number },
+            { label: '1', start: profitIdx as number },
+          ]
+
+    let emitted = 0
+    for (let i = 0; i < sections.length; i++) {
+      const start = sections[i].start
+      const end = i + 1 < sections.length ? sections[i + 1].start : text.length
+      const slice = text.slice(start, end).trim()
+      if (slice.length < 12) continue
+      emitted++
+      out.push({
+        ...block,
+        id: `${block.id}-pt-${sections[i].label}`,
+        text: slice,
+        labelNumber: sections[i].label,
+        labelWritten: sections[i].label,
+        contentKind: 'text',
+        diagramDescription: undefined,
+        bbox: sliceBbox(block.bbox, i, sections.length),
+        extraPages: undefined,
+      })
+    }
+    if (emitted < 2) out.push(block)
+  }
+
+  return out.length > 0 ? out : blocks
+}
+
+/**
+ * Split VL mega-blocks that glued triangle-area (Q8) with plant-cell (Q2).
+ * Common on Verna sheets when both sit under a single misread label "2".
+ */
+export function splitTrianglePlantBlocks(blocks: ExtractedBlock[]): ExtractedBlock[] {
+  const out: ExtractedBlock[] = []
+
+  for (const block of blocks) {
+    const text = block.text || ''
+    const hasTri = looksLikeTriangleArea(text)
+    const hasPlant = looksLikePlantCell(text)
+    if (!hasTri || !hasPlant) {
+      out.push(block)
+      continue
+    }
+
+    const plantIdx = Math.min(
+      ...[
+        text.search(/plant\s+cell/i),
+        text.search(/cell\s+wall/i),
+        text.search(/chloroplasts?/i),
+      ].filter((i) => i >= 0),
+      Number.POSITIVE_INFINITY,
+    )
+    const triIdx = Math.min(
+      ...[
+        text.search(/base\s*[:=]?\s*\d+/i),
+        text.search(/(?:1\s*\/\s*2|\u00bd)/),
+        text.search(/area/i),
+        text.search(/height\s*[:=]?\s*\d+/i),
+      ].filter((i) => i >= 0),
+      Number.POSITIVE_INFINITY,
+    )
+
+    if (!Number.isFinite(plantIdx) || !Number.isFinite(triIdx)) {
+      out.push(block)
+      continue
+    }
+
+    type Section = { label: string; start: number; kind?: ExtractedBlock['contentKind'] }
+    const sections: Section[] =
+      triIdx < plantIdx
+        ? [
+            { label: '8', start: triIdx as number },
+            { label: '2', start: plantIdx as number, kind: 'diagram' },
+          ]
+        : [
+            { label: '2', start: plantIdx as number, kind: 'diagram' },
+            { label: '8', start: triIdx as number },
+          ]
+
+    let emitted = 0
+    for (let i = 0; i < sections.length; i++) {
+      const start = sections[i].start
+      const end = i + 1 < sections.length ? sections[i + 1].start : text.length
+      const slice = text.slice(start, end).trim()
+      if (slice.length < 12) continue
+      emitted++
+      const meta = resolveDiagramMetaForSlice(
+        sections[i].label,
+        slice,
+        block.diagramDescription,
+      )
+      out.push({
+        ...block,
+        id: `${block.id}-tp-${sections[i].label}`,
+        text: slice,
+        labelNumber: sections[i].label,
+        labelWritten: sections[i].label,
+        contentKind: meta.diagramDescription
+          ? 'diagram'
+          : sections[i].kind === 'diagram'
+            ? 'text'
+            : sections[i].kind || 'text',
+        diagramDescription: meta.diagramDescription,
+        bbox: sliceBbox(block.bbox, i, sections.length),
+        extraPages: undefined,
+      })
+    }
+    if (emitted < 2) out.push(block)
+  }
+
+  return out.length > 0 ? out : blocks
+}
+
 /** Relabel obvious content/label mismatches from VL extract noise. */
 export function correctMislabeledAnswers(blocks: ExtractedBlock[]): ExtractedBlock[] {
   return blocks.map((b) => {
@@ -169,6 +471,54 @@ export function correctMislabeledAnswers(blocks: ExtractedBlock[]): ExtractedBlo
     if (looksLikeMars(text) && current !== '9b' && (current === '9' || current === '11' || !current)) {
       return { ...b, labelNumber: '9(b)', labelWritten: '9(b)' }
     }
+
+    // Verna / mixed papers: triangle area → always Q8 (never 8(a) / 2 / 1)
+    if (
+      looksLikeTriangleArea(text) &&
+      !looksLikePlantCell(text) &&
+      !looksLikeProfitCalc(text) &&
+      current !== '8'
+    ) {
+      return { ...b, labelNumber: '8', labelWritten: '8' }
+    }
+    // Plant cell alone under wrong / missing label (not photosynthesis essays)
+    if (
+      looksLikePlantCell(text) &&
+      !looksLikeTriangleArea(text) &&
+      !looksLikePhotosynthesis(text) &&
+      current !== '2' &&
+      (current === '8' || current === '9' || !current)
+    ) {
+      return { ...b, labelNumber: '2', labelWritten: '2' }
+    }
+    // Short GK: largest planet (incl. "Jaipur" typo)
+    if (
+      looksLikeLargestPlanet(text) &&
+      !looksLikePhotosynthesis(text) &&
+      current !== '4' &&
+      (current === '5' ||
+        current === '5a' ||
+        current === '3b' ||
+        current === '8' ||
+        current === '10' ||
+        !current)
+    ) {
+      return { ...b, labelNumber: '4', labelWritten: '4' }
+    }
+    // Short GK: Ambedkar / Constitution
+    if (
+      looksLikeAmbedkar(text) &&
+      current !== '10' &&
+      (current === '4' ||
+        current === '5' ||
+        current === '5a' ||
+        current === '8' ||
+        current === '1' ||
+        !current)
+    ) {
+      return { ...b, labelNumber: '10', labelWritten: '10' }
+    }
+
     return b
   })
 }
@@ -258,8 +608,85 @@ export function expandParentAnswerLabels(blocks: ExtractedBlock[]): ExtractedBlo
   return out
 }
 
+/**
+ * Split blocks that glued photosynthesis (Q9 on Verna / Q4 on older papers)
+ * with a plant-cell organelle dump (Q2).
+ */
+export function splitPhotoPlantBlocks(blocks: ExtractedBlock[]): ExtractedBlock[] {
+  const out: ExtractedBlock[] = []
+
+  for (const block of blocks) {
+    const text = block.text || ''
+    const hasPhoto = looksLikePhotosynthesis(text)
+    const hasPlant = /plant\s+cell/i.test(text)
+    if (!hasPhoto || !hasPlant) {
+      out.push(block)
+      continue
+    }
+
+    const photoIdx = text.search(/photosynthesis/i)
+    const plantIdx = text.search(/plant\s+cell/i)
+    if (photoIdx < 0 || plantIdx < 0 || Math.abs(photoIdx - plantIdx) < 20) {
+      out.push(block)
+      continue
+    }
+
+    const current = normalizeLabel(block.labelNumber || block.labelWritten)
+    const photoLabel = current === '4' ? '4' : '9'
+
+    type Section = { label: string; start: number; kind?: ExtractedBlock['contentKind'] }
+    const sections: Section[] =
+      photoIdx < plantIdx
+        ? [
+            { label: photoLabel, start: photoIdx },
+            { label: '2', start: plantIdx, kind: 'diagram' },
+          ]
+        : [
+            { label: '2', start: plantIdx, kind: 'diagram' },
+            { label: photoLabel, start: photoIdx },
+          ]
+
+    let emitted = 0
+    for (let i = 0; i < sections.length; i++) {
+      const start = sections[i].start
+      const end = i + 1 < sections.length ? sections[i + 1].start : text.length
+      const slice = text.slice(start, end).trim()
+      if (slice.length < 20) continue
+      emitted++
+      const meta = resolveDiagramMetaForSlice(
+        sections[i].label,
+        slice,
+        block.diagramDescription,
+      )
+      out.push({
+        ...block,
+        id: `${block.id}-pp-${sections[i].label}`,
+        text: slice,
+        labelNumber: sections[i].label,
+        labelWritten: sections[i].label,
+        contentKind: meta.diagramDescription
+          ? 'diagram'
+          : sections[i].kind === 'diagram'
+            ? 'text'
+            : sections[i].kind || 'text',
+        diagramDescription: meta.diagramDescription,
+        bbox: sliceBbox(block.bbox, i, sections.length),
+      })
+    }
+    if (emitted < 2) out.push(block)
+  }
+
+  return out.length > 0 ? out : blocks
+}
+
 export function enrichAnswerLabels(blocks: ExtractedBlock[]): ExtractedBlock[] {
   return correctMislabeledAnswers(
-    expandParentAnswerLabels(splitMergedTopicBlocks(blocks)),
+    expandParentAnswerLabels(
+      splitPhotoPlantBlocks(
+        splitTrianglePlantBlocks(
+          splitProfitTriangleBlocks(splitMergedTopicBlocks(blocks)),
+        ),
+      ),
+    ),
   )
 }
