@@ -19,10 +19,12 @@ export const extractedBlockSchema = z.object({
   bbox: bboxSchema,
   bboxSource: z.enum(['qwen', 'gemini', 'none']),
   contentKind: z
-    .enum(['text', 'formula', 'derivative', 'diagram', 'mixed'])
+    .enum(['text', 'numerical', 'formula', 'derivative', 'diagram', 'table', 'mixed'])
     .optional(),
   mathLatex: z.string().optional(),
   diagramDescription: z.string().optional(),
+  tableData: z.array(z.array(z.string())).optional(),
+  continuesFrom: z.string().optional(),
   isStrikethrough: z.boolean().optional(),
   extraPages: z
     .array(

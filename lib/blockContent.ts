@@ -2,9 +2,11 @@ import type { ContentKind, ExtractedBlock } from './types'
 
 const KIND_SET = new Set<ContentKind>([
   'text',
+  'numerical',
   'formula',
   'derivative',
   'diagram',
+  'table',
   'mixed',
 ])
 
@@ -35,8 +37,16 @@ export function inferContentKind(block: {
   }
   const t = block.text ?? ''
   if (/diagram|figure|graph|sketch|labelled|labeled draw/i.test(t)) return 'diagram'
+  if (/\d+\s*(?:cm|m|kg|mol|%|°|₹|\$)|=\s*\d|^\s*\d+\s*$|\bcalculate\b|\bfind\b.*\d/i.test(t)) {
+    return 'numerical'
+  }
   if (/\\frac|∑|∫|√|≤|≥|≠|→|d\/dx|dy\/dx|∂/.test(t)) return 'formula'
   return 'text'
+}
+
+function formatTableData(rows?: string[][]): string {
+  if (!rows?.length) return ''
+  return rows.map((row) => row.join(' | ')).join('\n')
 }
 
 /**
@@ -53,6 +63,9 @@ export function blockContentForModel(block: ExtractedBlock | null | undefined): 
   if (block.diagramDescription?.trim()) {
     parts.push(`Diagram: ${block.diagramDescription.trim()}`)
   }
+  if (block.tableData?.length) {
+    parts.push(`Table:\n${formatTableData(block.tableData)}`)
+  }
   return parts.join('\n\n')
 }
 
@@ -60,10 +73,14 @@ export function contentKindLabel(kind?: ContentKind): string | null {
   switch (kind) {
     case 'formula':
       return 'Formula'
+    case 'numerical':
+      return 'Numerical'
     case 'derivative':
       return 'Derivative'
     case 'diagram':
       return 'Diagram'
+    case 'table':
+      return 'Table'
     case 'mixed':
       return 'Mixed'
     default:

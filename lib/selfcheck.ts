@@ -443,6 +443,63 @@ async function main() {
     'planet → 4, Ambedkar → 10',
   )
 
+  const chemInline = enrichAnswerLabels([
+    block({
+      id: 'chem-page',
+      text:
+        '4) Jaipur is the largest planet in solar system\n' +
+        '10 DR. B.R. Ambedkar\n' +
+        '5(a) methanol has the molecular formula HCHO\n' +
+        '5(b) sodium - symbol - (Na) atomic number - 11 group = 1 Period = 3',
+      labelNumber: '5(a)',
+      bbox: { x: 0.1, y: 0.1, w: 0.8, h: 0.8 },
+    }),
+  ])
+  check(
+    'inline_chemistry_split',
+    chemInline.some((b) => normalizeLabel(b.labelNumber) === '4') &&
+      chemInline.some((b) => normalizeLabel(b.labelNumber) === '5b') &&
+      chemInline.some((b) => normalizeLabel(b.labelNumber) === '10'),
+    'glued chemistry page → 4 + 10 + 5(a) + 5(b)',
+  )
+
+  const sodiumRepair = enrichAnswerLabels([
+    block({
+      id: 'na5b',
+      text: 'sodium - symbol - (Na) atomic number - 11 group = 1 Period = 3',
+      labelNumber: undefined,
+    }),
+  ])
+  check(
+    'sodium_label_repair',
+    sodiumRepair.some((b) => normalizeLabel(b.labelNumber) === '5b'),
+    'sodium periodic table → 5(b)',
+  )
+
+  const plantTwins = enrichAnswerLabels([
+    block({
+      id: 'p-prose',
+      text: 'A plant cell contains a cell wall, nucleus, chloroplasts and a large central vacuole.',
+      labelNumber: '2',
+      pageIndex: 0,
+    }),
+    block({
+      id: 'p-diag',
+      text: 'A diagram of a plant cell with various organelles labeled, including smooth ER, golgi apparatus, and chloroplast.',
+      labelNumber: '2',
+      pageIndex: 1,
+      contentKind: 'diagram',
+      diagramDescription:
+        'Plant cell organelles: smooth ER, rough ER, nucleus, vacuole, chloroplast, golgi apparatus.',
+    }),
+  ])
+  check(
+    'dedupe_plant_cell_twins',
+    plantTwins.filter((b) => normalizeLabel(b.labelNumber) === '2').length === 1 &&
+      Boolean(plantTwins.find((b) => normalizeLabel(b.labelNumber) === '2')?.diagramDescription),
+    'keep diagram Q2 twin, drop prose duplicate',
+  )
+
   // --- Map: split mega-2 matches Q8 and Q2; topical rematch Q4/Q10 ---
   const vernaQs = [
     block({ id: 'vq2', text: 'Draw and label a diagram of a plant cell', labelNumber: '2' }),

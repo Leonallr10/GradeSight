@@ -4,6 +4,7 @@ import {
   looksLikeLargestPlanet,
   looksLikePlantCell,
   looksLikeProfitCalc,
+  looksLikeSodiumPeriodic,
   looksLikeTriangleArea,
 } from './enrichAnswers'
 import { findLabelAnywhere } from './findLabel'
@@ -155,7 +156,7 @@ export function dedupeAnswerBlocks(blocks: ExtractedBlock[]): ExtractedBlock[] {
 function looksLikeStandaloneShortAnswer(text: string): boolean {
   const t = clean(text)
   if (t.length > 220) return false
-  return looksLikeLargestPlanet(t) || looksLikeAmbedkar(t)
+  return looksLikeLargestPlanet(t) || looksLikeAmbedkar(t) || looksLikeSodiumPeriodic(t)
 }
 
 function topicsConflictForMerge(current: ExtractedBlock, next: ExtractedBlock): boolean {
@@ -170,6 +171,7 @@ function topicsConflictForMerge(current: ExtractedBlock, next: ExtractedBlock): 
   if (looksLikePlantCell(nt) && looksLikeTriangleArea(ct)) return true
   if (looksLikeLargestPlanet(nt) && !looksLikeLargestPlanet(ct)) return true
   if (looksLikeAmbedkar(nt) && !looksLikeAmbedkar(ct)) return true
+  if (looksLikeSodiumPeriodic(nt) && !looksLikeSodiumPeriodic(ct)) return true
   return false
 }
 
@@ -227,9 +229,19 @@ export function groupAnswersByLabel(blocks: ExtractedBlock[]): ExtractedBlock[] 
       seeded = { ...seeded, labelNumber: '2', labelWritten: '2' }
     } else if (
       !normalizeLabel(seeded.labelNumber || seeded.labelWritten) &&
-      looksLikeProfitCalc(seeded.text || '')
+      looksLikeLargestPlanet(seeded.text || '')
     ) {
-      seeded = { ...seeded, labelNumber: '1', labelWritten: '1' }
+      seeded = { ...seeded, labelNumber: '4', labelWritten: '4' }
+    } else if (
+      !normalizeLabel(seeded.labelNumber || seeded.labelWritten) &&
+      looksLikeAmbedkar(seeded.text || '')
+    ) {
+      seeded = { ...seeded, labelNumber: '10', labelWritten: '10' }
+    } else if (
+      !normalizeLabel(seeded.labelNumber || seeded.labelWritten) &&
+      looksLikeSodiumPeriodic(seeded.text || '')
+    ) {
+      seeded = { ...seeded, labelNumber: '5(b)', labelWritten: '5(b)' }
     }
     groups.push(seeded)
   }

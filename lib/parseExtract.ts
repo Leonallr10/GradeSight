@@ -77,6 +77,10 @@ type RawBlock = {
   strikethrough?: unknown
   crossedOut?: unknown
   crossed_out?: unknown
+  tableData?: unknown
+  table_data?: unknown
+  continuesFrom?: unknown
+  continues_from?: unknown
 }
 
 /**
@@ -171,6 +175,17 @@ function pickBool(...vals: unknown[]): boolean {
   return false
 }
 
+function pickTableData(raw: unknown): string[][] | undefined {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined
+  const rows: string[][] = []
+  for (const row of raw) {
+    if (!Array.isArray(row)) continue
+    const cells = row.map((c) => String(c ?? '').trim()).filter(Boolean)
+    if (cells.length) rows.push(cells)
+  }
+  return rows.length ? rows : undefined
+}
+
 export function parseExtractedBlocks(
   rawText: string,
   pageIndex: number,
@@ -200,7 +215,13 @@ export function parseExtractedBlocks(
       item.diagram,
       item.figureDescription,
     )
+    const tableData = pickTableData(item.tableData ?? item.table_data)
+    const continuesFrom = pickString(item.continuesFrom, item.continues_from)
     let text = buildText(item)
+    if (tableData?.length) {
+      const tableText = tableData.map((row) => row.join(' | ')).join('\n')
+      text = text ? `${text}\n${tableText}` : tableText
+    }
     if (mathLatex && !text.includes(mathLatex) && !/Math \(LaTeX\)/i.test(text)) {
       text = text ? `${text}\n${mathLatex}` : mathLatex
     }
@@ -244,9 +265,11 @@ export function parseExtractedBlocks(
       labelWritten,
       bbox,
       bboxSource: bbox ? 'qwen' : 'none',
-      contentKind,
+      contentKind: tableData?.length && contentKind === 'text' ? 'table' : contentKind,
       mathLatex,
       diagramDescription,
+      tableData,
+      continuesFrom,
       isStrikethrough: isStrikethrough || undefined,
     })
     i += 1

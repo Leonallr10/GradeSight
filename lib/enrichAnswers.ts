@@ -116,6 +116,130 @@ export function looksLikeAmbedkar(text: string): boolean {
   )
 }
 
+/** Sodium periodic-table answer (Q5(b) on Verna chemistry section). */
+export function looksLikeSodiumPeriodic(text: string): boolean {
+  const t = text.toLowerCase().replace(/\s+/g, ' ').trim()
+  if (t.length > 320) return false
+  return (
+    (/\bsodium\b/.test(t) && /(?:group|period|atomic\s+number|\(na\))/i.test(t)) ||
+    (/\bgroup\s*=\s*1\b/.test(t) && /\bperiod\s*=\s*3\b/.test(t)) ||
+    (/\(na\)/.test(t) && /atomic\s+number\s*[-=]?\s*11/.test(t))
+  )
+}
+
+function plantBlockRichness(block: ExtractedBlock): number {
+  let score = 0
+  const d = (block.diagramDescription || '').trim()
+  const text = block.text || ''
+  if (d.length > 40) score += 100 + Math.min(d.length, 400)
+  if (block.contentKind === 'diagram') score += 40
+  if (looksLikeDrawnFigureDescription(text)) score += 80
+  if (/organelle|smooth\s*er|golgi|labelled|labeled/i.test(d || text)) score += 60
+  score += Math.min(text.length, 200) / 20
+  return score
+}
+
+type InlineLabelHit = { label: string; start: number }
+
+/** Find mid-block answer labels like `4)`, `10 DR`, `5(b)` on Verna-style sheets. */
+function findInlineAnswerLabels(text: string): InlineLabelHit[] {
+  const hits: InlineLabelHit[] = []
+  const seenStarts = new Set<number>()
+
+  const push = (label: string, start: number) => {
+    if (seenStarts.has(start)) return
+    seenStarts.add(start)
+    hits.push({ label, start })
+  }
+
+  let m: RegExpExecArray | null
+
+  const subRe = /(?:^|\n)\s*(?:Q\s*)?(\d{1,2})\s*[\(\[]\s*([a-z])\s*[\)\]]\s*/gi
+  while ((m = subRe.exec(text)) !== null) {
+    push(`${m[1]}(${m[2].toLowerCase()})`, m.index)
+  }
+
+  const parenRe = /(?:^|\n)\s*(?:Q\s*)?(\d{1,2})\s*\)\s*/gi
+  while ((m = parenRe.exec(text)) !== null) {
+    push(m[1], m.index)
+  }
+
+  const tenRe = /(?:^|\n)\s*(10)\s+(?:DR\.?|Dr\.?)\s*/gi
+  while ((m = tenRe.exec(text)) !== null) {
+    push('10', m.index)
+  }
+
+  const fourRe =
+    /(?:^|\n)\s*(4)\s*[\)\.]?\s*(?:Jaipur|jupiter|mars|planet|largest|solar)/gi
+  while ((m = fourRe.exec(text)) !== null) {
+    push('4', m.index)
+  }
+
+  hits.sort((a, b) => a.start - b.start)
+  return hits
+}
+
+/**
+ * Split one VL block that glued multiple labelled answers (e.g. 4), 10, 5(a), 5(b)
+ * on the same chemistry page).
+ */
+export function splitInlineLabeledAnswerBlocks(blocks: ExtractedBlock[]): ExtractedBlock[] {
+  const out: ExtractedBlock[] = []
+
+  for (const block of blocks) {
+    const text = block.text || ''
+    const hits = findInlineAnswerLabels(text)
+    if (hits.length < 2) {
+      out.push(block)
+      continue
+    }
+
+    let emitted = 0
+    for (let i = 0; i < hits.length; i++) {
+      const start = hits[i].start
+      const end = i + 1 < hits.length ? hits[i + 1].start : text.length
+      const slice = text.slice(start, end).trim()
+      if (slice.length < 6) continue
+      emitted++
+      out.push({
+        ...block,
+        id: `${block.id}-inline-${hits[i].label}-${i}`,
+        text: slice,
+        labelNumber: hits[i].label,
+        labelWritten: hits[i].label,
+        bbox: sliceBbox(block.bbox, i, hits.length),
+        extraPages: undefined,
+      })
+    }
+    if (emitted < 2) out.push(block)
+  }
+
+  return out.length > 0 ? out : blocks
+}
+
+/** Keep the richest plant-cell block when VL emits prose + diagram twins for Q2. */
+export function dedupeSameLabelPlantBlocks(blocks: ExtractedBlock[]): ExtractedBlock[] {
+  const byLabel = new Map<string, ExtractedBlock[]>()
+  for (const block of blocks) {
+    const label = normalizeLabel(block.labelNumber || block.labelWritten)
+    if (!label) continue
+    const list = byLabel.get(label) ?? []
+    list.push(block)
+    byLabel.set(label, list)
+  }
+
+  const dropIds = new Set<string>()
+  for (const [label, group] of byLabel) {
+    if (label !== '2' || group.length < 2) continue
+    const plantish = group.filter((b) => looksLikePlantCell(b.text || ''))
+    if (plantish.length < 2) continue
+    const ranked = [...plantish].sort((a, b) => plantBlockRichness(b) - plantBlockRichness(a))
+    for (let i = 1; i < ranked.length; i++) dropIds.add(ranked[i].id)
+  }
+
+  return dropIds.size > 0 ? blocks.filter((b) => !dropIds.has(b.id)) : blocks
+}
+
 function sliceBbox(bbox: BBox | undefined, index: number, total: number): BBox | undefined {
   if (!bbox || total <= 1) return bbox
   const h = Math.max(0.02, bbox.h / total)
@@ -518,6 +642,17 @@ export function correctMislabeledAnswers(blocks: ExtractedBlock[]): ExtractedBlo
     ) {
       return { ...b, labelNumber: '10', labelWritten: '10' }
     }
+    if (
+      looksLikeSodiumPeriodic(text) &&
+      current !== '5b' &&
+      (current === '5' ||
+        current === '5a' ||
+        current === '6' ||
+        current === '10' ||
+        !current)
+    ) {
+      return { ...b, labelNumber: '5(b)', labelWritten: '5(b)' }
+    }
 
     return b
   })
@@ -680,11 +815,15 @@ export function splitPhotoPlantBlocks(blocks: ExtractedBlock[]): ExtractedBlock[
 }
 
 export function enrichAnswerLabels(blocks: ExtractedBlock[]): ExtractedBlock[] {
-  return correctMislabeledAnswers(
-    expandParentAnswerLabels(
-      splitPhotoPlantBlocks(
-        splitTrianglePlantBlocks(
-          splitProfitTriangleBlocks(splitMergedTopicBlocks(blocks)),
+  return dedupeSameLabelPlantBlocks(
+    correctMislabeledAnswers(
+      expandParentAnswerLabels(
+        splitInlineLabeledAnswerBlocks(
+          splitPhotoPlantBlocks(
+            splitTrianglePlantBlocks(
+              splitProfitTriangleBlocks(splitMergedTopicBlocks(blocks)),
+            ),
+          ),
         ),
       ),
     ),
