@@ -1,42 +1,101 @@
-"""Shared extract prompt — keep aligned with lib/hf-qwen.ts EXTRACT_PROMPT."""
+"""Shared extract prompt — keep aligned with lib/extractPrompt.ts EXTRACT_PROMPT."""
 
-EXTRACT_PROMPT = """You extract ONLY gradeable exam items from a page image (any board / school / subject).
+EXTRACT_PROMPT = """You extract ONLY gradeable exam items from a page image (any board, school, subject, or language).
 
-Read ONLY what appears on this page. Do not invent content.
+Read ONLY what is visible on this page. Do not invent content.
 
-INCLUDE (each as its own JSON object — leaf sub-parts only):
-- Numbered questions and lettered / roman sub-parts that a student must answer.
-- If sub-parts exist, emit separate leaves; do NOT also emit a parent that duplicates those children.
+INCLUDE — emit one JSON object per leaf item:
+- Numbered questions and their lettered / roman sub-parts that a student must answer.
+- When sub-parts exist, emit each leaf separately; do NOT also emit a parent block that duplicates those children.
+- Every visible answer on an answer sheet, regardless of length or format.
 
-EXCLUDE completely:
-- Exam title, school/board name, subject line, date, class, duration, max marks banners
-- Instructions / section headers alone / page numbers / student name fields
+EXCLUDE — do NOT emit JSON for:
+- Exam titles, school/board headers, subject lines, dates, class, duration, max-marks banners
+- General instructions, section/part headers alone, page numbers, watermarks, decorative lines
+- Student name, roll number, ID, or other admin fields on answer sheets
 
-ANSWER SHEETS — grouping (critical):
-- Group ALL lines that belong to the same question label into ONE block.
-- Only start a NEW block when a NEW question label appears.
-- SHORT / one-line GK answers are REQUIRED: emit every visible Q# (planet names, Ambedkar, etc.).
-- Do NOT merge unrelated questions (e.g. triangle calc + plant-cell must be TWO blocks).
-- Diagrams: each drawn figure is its OWN block with contentKind="diagram". Put every visible label inside diagramDescription AND summarize in text.
-- Do NOT attach a plant-cell figure to a photosynthesis answer (or vice versa).
-- Do NOT omit large page-filling diagrams even when nearby text belongs to another Q#.
-- Always set labelWritten when a Q# is visible.
-- bbox: [x, y, w, h] normalized 0–1, top-left origin
+LABEL DETECTION:
+- A question label may appear as "Q4", "4.", "4)", "(a)", "10(a)", a bare number on its own line, or any local convention used on the sheet.
+- Set labelWritten to the label exactly as written when visible; set labelNumber to a normalized form when possible.
+- Emit a block for EVERY visible label on the page before moving on — scan top to bottom.
 
-Return ONLY a JSON array (no markdown). If this page has no gradeable items, return [].
-[{"text":"...","labelWritten":"Q7","labelNumber":"7","bbox":[x,y,w,h],"contentKind":"diagram","mathLatex":"","diagramDescription":"labelled figure with ...","isStrikethrough":false}]
+ANSWER COMPLETENESS (critical):
+- Short answers are full answers: a single word, proper name, date, symbol, numeric result, or one-line fact MUST be extracted with the same priority as long derivations or essays.
+- Never skip a labelled item because it is shorter than neighbouring answers.
+- Sub-parts under one number often differ greatly in length — extract each sub-part independently.
+
+CONTENT TYPE — set contentKind correctly:
+- "text"        — prose, definitions, explanations, proper names, historical figures, single-fact recall
+- "numerical"   — numeric calculations, word-problem working, unit conversions, measured quantities with steps
+- "formula"     — standalone equations, chemical formulae, mathematical expressions (also put LaTeX in mathLatex)
+- "derivative"  — step-by-step algebraic or calculus derivations and proofs
+- "diagram"     — any hand-drawn or printed figure: biological, chemical, physical apparatus, geometry, maps, cycles, circuits, graphs, labelled sketches
+- "table"       — row/column layouts: periodic-table lookups, comparisons, property lists, data grids (also fill tableData)
+- "mixed"       — block combines two or more of the above (e.g. prose + formula, diagram + caption)
+
+SPECIAL ANSWER FORMS — all are valid and required when present:
+- Proper names and person names (authors, scientists, historical figures, titles of office)
+- Periodic-table / element facts: symbol, atomic number, group, period, physical/chemical properties
+- Diagrams with part labels, arrows, annotations — capture every visible label in diagramDescription AND summarize in text
+- Numerical working: preserve calculation steps in text; put key equations in mathLatex
+- Formulae and equations: reproduce in mathLatex using ASCII-safe LaTeX
+
+ANSWER SHEET GROUPING:
+- Group ALL content under the same label into ONE block: working steps, formulae, diagram labels, and captions together.
+- Start a NEW block only when a NEW question label appears, or there is a clear visual break to a different labelled answer.
+- Do NOT emit one JSON object per individual formula line or diagram label — those belong inside the parent block.
+
+DIAGRAM RULES:
+- Each distinct drawn figure is its own block with contentKind="diagram".
+- Never merge two separate figures into one block because they are adjacent or thematically related.
+- Never emit a heading without the figure content — if labels are drawn, capture them.
+
+TABLE RULES:
+- When the student wrote rows and columns (ruled or freehand), set contentKind="table".
+- Fill tableData as an array of rows; each row is an array of cell strings in reading order.
+- Also provide a readable text summary; do not discard the tabular structure.
+
+NUMERICAL / FORMULA RULES:
+- Multi-step calculations for one label stay in ONE block (contentKind="numerical" or "formula" as appropriate).
+- Put the main equations in mathLatex; keep intermediate arithmetic in text.
+
+CROSS-QUESTION INTEGRITY:
+- Do NOT merge unrelated labelled items into one block, even if physically adjacent on the page.
+
+STRIKETHROUGH:
+- Crossed-out draft text: set isStrikethrough=true or omit it; prefer the corrected final version for the same label.
+
+MULTI-PAGE CONTINUATION:
+- If an answer clearly continues from a previous page (mid-sentence, mid-derivation, or an explicit "continued" marker), emit a block for THIS page and set continuesFrom to the label being continued.
+- Do NOT merge continuation pages yourself — only flag continuesFrom.
+
+FIELDS (all blocks):
+- text               — full readable content for the item
+- labelWritten       — label as visible on the page (required when readable)
+- labelNumber        — normalized label when possible
+- bbox               — [x, y, w, h] normalized 0–1, top-left origin, union of the whole region
+- contentKind        — one of: text | numerical | formula | derivative | diagram | table | mixed
+- mathLatex          — LaTeX for equations/formulae (null if none)
+- diagramDescription — structured description of figures and all visible labels (null if none)
+- tableData          — array of row arrays for tabular content (null if not a table)
+- isStrikethrough    — true only for crossed-out draft content
+- continuesFrom      — label this block continues from another page (null otherwise)
+
+Return ONLY a JSON array (no markdown, no commentary). If nothing gradeable appears on this page, return [].
 """
 
 ROLE_HINT = {
     "question": (
-        "Document role: QUESTION PAPER. Extract ONLY answerable questions and sub-parts. "
-        "Skip titles, section headers, duration/marks banners, and instructions."
+        "Document role: QUESTION PAPER. Extract only answerable questions and leaf sub-parts. "
+        "Skip titles, banners, section headers, and instructions. "
+        "Preserve hierarchical numbering exactly as printed."
     ),
     "answer": (
-        "Document role: ANSWER SHEET. ONE JSON object per question label covering the FULL answer. "
-        "Always set labelWritten when Q# / question number is visible. "
-        "Emit every short GK answer. Each drawn figure → its own diagram block with full "
-        "diagramDescription; never glue plant-cell onto photosynthesis. "
-        "Never split one labelled answer into many fragments."
+        "Document role: ANSWER SHEET. One JSON object per question label with the FULL answer for that label. "
+        "Extract every visible label including short names, single facts, periodic-table entries, and one-line results. "
+        "Classify each block: diagram / numerical / formula / table / text / mixed. "
+        "Never merge unrelated labels. Each figure is its own diagram block. "
+        "Tabular answers use tableData. Flag cross-page continuations with continuesFrom. "
+        "Tag strikethrough drafts with isStrikethrough=true."
     ),
 }

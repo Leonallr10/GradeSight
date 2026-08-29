@@ -2,12 +2,15 @@
 
 Teacher-facing **Next.js** app: upload a question paper + handwritten answer sheet, extract questions/answers, map side-by-side, highlight answer regions, and optionally grade with Groq.
 
+**Full pipeline documentation:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — methods, flow, models, and implementation details.
+
 ## Stack
 
 | Layer | Choice |
 |-------|--------|
 | Framework | Next.js 16 (App Router) |
 | Extraction (default / deploy) | HF Inference VL — `meta-llama/Llama-4-Scout-17B-16E-Instruct:novita` |
+| Chemistry specialist (optional local) | **`AI4Chem/ChemVLM-8B`** via `ml/serve_chem.py` — refines chem diagram/formula blocks; `USE_CHEM_VLM=1` |
 | Extraction (legacy offline dev) | **Qwen2.5-VL-3B** via `ml/serve_extract.py` — requires `USE_LEGACY_LOCAL_EXTRACT=1` |
 | Matching | Label normalize + cosine (lexical embeddings) |
 | Bbox repair | Same HF vision model (when HF mode) |

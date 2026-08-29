@@ -1,8 +1,19 @@
 import { blockContentForModel } from './blockContent'
+import {
+  diagramRichness,
+  STRONG_TOPICS,
+  topicalConflict,
+  topicalOverlap,
+} from './contentTopics'
 import { cosineSimilarity } from './cosine'
 import { enrichAnswerLabels as repairAnswerLabels } from './enrichAnswers'
 import { findLabelAnywhere } from './findLabel'
 import { groupAnswersByLabel } from './groupAnswers'
+import {
+  answerQuestionFit,
+  buildQuestionIndex,
+  preferLeafQuestions,
+} from './questionIndex'
 import {
   formatLabel,
   isStrictParentLabel,
@@ -75,116 +86,83 @@ export function inheritAnswerLabels(answers: ExtractedBlock[]): ExtractedBlock[]
   })
 }
 
-/** @deprecated use inheritAnswerLabels — kept as alias for older imports */
+/** @deprecated use inheritAnswerLabels */
 export const enrichAnswerLabels = inheritAnswerLabels
 
+export { diagramRichness }
 
-/** Reject obvious cross-topic false positives (e.g. photosynthesis ↔ Newton's laws). */
-function topicalConflict(question: ExtractedBlock, answer: ExtractedBlock): boolean {
-  const qHits = topicalHits(question)
-  const aHits = topicalHits(answer)
-  if (qHits.length === 0 || aHits.length === 0) return false
-  return qHits.every((h) => !aHits.includes(h))
-}
+/** Pass 4: match short orphan answers to unanswered questions by question text + content. */
+function rematchOrphanAnswers(
+  leafQuestions: ExtractedBlock[],
+  enrichedAnswers: ExtractedBlock[],
+  usedQuestionIds: Set<string>,
+  usedAnswerIds: Set<string>,
+  pairs: MappedPair[],
+): void {
+  const leftQ = leafQuestions.filter((q) => !usedQuestionIds.has(q.id))
+  const leftA = enrichedAnswers.filter((a) => !usedAnswerIds.has(a.id))
+  if (leftQ.length === 0 || leftA.length === 0) return
 
-const TOPIC_RULES: Array<{ name: string; re: RegExp }> = [
-  { name: 'photo', re: /photosynth|chlorophyll|glucose|co2|carbon dioxide/ },
-  { name: 'newton', re: /newton|inertia|\bf\s*=\s*ma\b|action\s+and\s+reaction|laws?\s+of\s+motion/ },
-  { name: 'mitosis', re: /mitosis|meiosis|chromosome/ },
-  { name: 'ladder', re: /ladder|pythagoras|hypotenuse|slides?\s+down/ },
-  { name: 'path', re: /circular\s+field|annular|path.*radius|radius.*path/ },
-  { name: 'drycell', re: /dry\s*cell|anode|cathode|electrolyte|zinc\s+can/ },
-  { name: 'nobel', re: /nobel|marie\s+curie|radium/ },
-  { name: 'planet', re: /red\s+planet|\bmars\b|largest\s+planet|\bjupiter\b|\bjaipur\b|solar\s+system/ },
-  { name: 'ambedkar', re: /ambedkar|father\s+of\s+(?:the\s+)?(?:indian\s+)?constitution/ },
-  { name: 'triangle', re: /right[- ]angled\s+triangle|area\s+of\s+(?:a\s+)?triangle|(?:1\s*\/\s*2|\u00bd)\s*\*?\s*(?:b|base)|base\s*[:=]?\s*12/ },
-  { name: 'plantcell', re: /plant\s+cell|(?:cell\s+wall).{0,40}(?:vacuole|chloroplast)/ },
-  { name: 'methanal', re: /methanal|methanol|hcho|aldehyde|formaldehyde/ },
-  { name: 'sodium', re: /\bsodium\b|group\s*=\s*1.{0,20}period\s*=\s*3/ },
-  { name: 'prime', re: /prime\s+number|check.*prime|is\s+prime/ },
-  { name: 'watercycle', re: /water\s+cycle/ },
-  { name: 'ramrom', re: /\bram\b|\brom\b|volatile|bios/ },
-  { name: 'python', re: /python|def\s+\w+|maximum of three/ },
-  { name: 'quad', re: /quadratic|3x\^?2|roots?\s+are/ },
-  { name: 'compos', re: /g\s*\(\s*f\s*\(|f\s*\(\s*3\s*\)/ },
-  { name: 'profit', re: /selling\s+price|profit\s+of|bicycle/ },
-  { name: 'motion', re: /v\s*=\s*u\s*\+\s*at|first\s+equation\s+of\s+motion/ },
-]
+  type Cand = { qi: number; ai: number; score: number }
+  const cands: Cand[] = []
 
-/** Pass 3 only uses high-confidence topic cues (avoid chloroplast↔photosynthesis bleed). */
-const STRONG_TOPICS = new Set([
-  'ambedkar',
-  'triangle',
-  'planet',
-  'methanal',
-  'compos',
-  'ladder',
-  'drycell',
-  'nobel',
-  'plantcell',
-  'prime',
-  'watercycle',
-  'profit',
-  'motion',
-])
+  for (let qi = 0; qi < leftQ.length; qi++) {
+    for (let ai = 0; ai < leftA.length; ai++) {
+      const score = answerQuestionFit(leftQ[qi], leftA[ai])
+      if (score < 2) continue
+      cands.push({ qi, ai, score })
+    }
+  }
 
-function topicalHits(block: ExtractedBlock): string[] {
-  const t = blockContentForModel(block).toLowerCase()
-  return TOPIC_RULES.filter((r) => r.re.test(t)).map((r) => r.name)
-}
+  cands.sort((a, b) => b.score - a.score)
+  const takenQ = new Set<number>()
+  const takenA = new Set<number>()
 
-/** Shared topic names between question and answer (positive affinity). */
-function topicalOverlap(question: ExtractedBlock, answer: ExtractedBlock): string[] {
-  const qHits = topicalHits(question)
-  const aHits = new Set(topicalHits(answer))
-  return qHits.filter((h) => aHits.has(h))
-}
-
-/** Prefer answers that carry a real diagramDescription over short prose twins. */
-export function diagramRichness(answer: ExtractedBlock): number {
-  const d = (answer.diagramDescription || '').trim()
-  const text = answer.text || ''
-  let score = 0
-  if (d.length > 40) score += 100 + Math.min(d.length, 400)
-  if (answer.contentKind === 'diagram') score += 40
-  if (/organelle|smooth\s*er|golgi|labelled|labeled|amyloplast|arrow/i.test(d)) score += 80
-  // Short definition-style plant-cell line without diagram meta is weak
-  if (!d && /plant\s+cell contains/i.test(text) && text.length < 220) score -= 30
-  // Longer structured text slightly preferred when no diagram field
-  score += Math.min(text.length, 200) / 20
-  return score
+  for (const c of cands) {
+    if (takenQ.has(c.qi) || takenA.has(c.ai)) continue
+    const question = leftQ[c.qi]
+    const answer = leftA[c.ai]
+    pairs.push({
+      id: `pair-${question.id}-${answer.id}`,
+      status: 'matched',
+      question,
+      answer: {
+        ...answer,
+        labelNumber: answer.labelNumber || question.labelNumber,
+      },
+      similarity: Math.min(0.95, 0.85 + 0.02 * c.score),
+    })
+    usedQuestionIds.add(question.id)
+    usedAnswerIds.add(answer.id)
+    takenQ.add(c.qi)
+    takenA.add(c.ai)
+  }
 }
 
 /**
  * Pass 1: exact normalized label match.
- * Pass 2: unlabeled OR orphan-labeled leftovers, cosine ≥ threshold, no topical conflict.
- * Pass 3: strong topical keyword rematch for remaining unanswered ↔ unused answers.
+ * Pass 2: unlabeled / orphan-labeled, cosine ≥ threshold.
+ * Pass 3: strong topical keyword rematch.
+ * Pass 4: question-content fit for short orphans.
  */
 export async function mapAnswersToQuestions(
   questions: ExtractedBlock[],
   answers: ExtractedBlock[],
   embed: EmbedFn,
 ): Promise<MappedPair[]> {
-  const leafQuestions = preferLeafBlocks(inheritAnswerLabels(questions))
+  const leafQuestions = preferLeafQuestions(inheritAnswerLabels(questions))
+  const questionIndex = buildQuestionIndex(leafQuestions)
   const grouped = groupAnswersByLabel(answers.filter((a) => !a.isStrikethrough))
-  // Content repair (mislabel / parent split / mega-block) then letter inheritance
   const enrichedAnswers = preferLeafBlocks(
-    inheritAnswerLabels(repairAnswerLabels(grouped)),
+    inheritAnswerLabels(repairAnswerLabels(grouped, leafQuestions)),
   )
 
   const pairs: MappedPair[] = []
   const usedAnswerIds = new Set<string>()
   const usedQuestionIds = new Set<string>()
 
-  const questionByLabel = new Map<string, ExtractedBlock>()
-  for (const q of leafQuestions) {
-    const label = normalizeLabel(q.labelNumber || q.labelWritten)
-    if (label && !questionByLabel.has(label)) {
-      questionByLabel.set(label, q)
-    }
-  }
+  const questionByLabel = questionIndex.questionByLabel
 
-  // Pass 1 — label exact match; when duplicates share a label, prefer diagram-rich
   const answersByLabel = new Map<string, ExtractedBlock[]>()
   for (const answer of enrichedAnswers) {
     const label = normalizeLabel(
@@ -220,7 +198,6 @@ export async function mapAnswersToQuestions(
   }
 
   const remainingQuestions = () => leafQuestions.filter((q) => !usedQuestionIds.has(q.id))
-  // Pass 2: unlabeled answers, OR labeled orphans (label points at no remaining Q)
   const remainingAnswersForPass2 = () =>
     enrichedAnswers.filter((a) => {
       if (usedAnswerIds.has(a.id)) return false
@@ -245,12 +222,14 @@ export async function mapAnswersToQuestions(
     type Candidate = { qi: number; ai: number; score: number }
     const candidates: Candidate[] = []
 
-    for (let qi = 0; qi < remQ.length; qi++) {
-      for (let ai = 0; ai < remA.length; ai++) {
-        if (topicalConflict(remQ[qi], remA[ai])) continue
-        const score = cosineSimilarity(qEmb[qi], aEmb[ai])
-        if (score >= SEMANTIC_MATCH_THRESHOLD) {
-          candidates.push({ qi, ai, score })
+    if (qEmb.length === remQ.length && aEmb.length === remA.length) {
+      for (let qi = 0; qi < remQ.length; qi++) {
+        for (let ai = 0; ai < remA.length; ai++) {
+          if (topicalConflict(remQ[qi], remA[ai])) continue
+          const score = cosineSimilarity(qEmb[qi], aEmb[ai])
+          if (score >= SEMANTIC_MATCH_THRESHOLD) {
+            candidates.push({ qi, ai, score })
+          }
         }
       }
     }
@@ -277,7 +256,6 @@ export async function mapAnswersToQuestions(
     }
   }
 
-  // Pass 3 — topical keyword rematch for leftovers (planet↔Jaipur, Ambedkar, etc.)
   {
     const leftQ = remainingQuestions()
     const leftA = enrichedAnswers.filter((a) => !usedAnswerIds.has(a.id))
@@ -316,6 +294,14 @@ export async function mapAnswersToQuestions(
       takenA.add(c.ai)
     }
   }
+
+  rematchOrphanAnswers(
+    leafQuestions,
+    enrichedAnswers,
+    usedQuestionIds,
+    usedAnswerIds,
+    pairs,
+  )
 
   for (const question of leafQuestions) {
     if (usedQuestionIds.has(question.id)) continue

@@ -10,7 +10,14 @@ export type BBoxSource = 'qwen' | 'gemini' | 'none'
 export type DocumentRole = 'question' | 'answer'
 
 /** What the block primarily contains (STEM-aware extraction). */
-export type ContentKind = 'text' | 'formula' | 'derivative' | 'diagram' | 'mixed'
+export type ContentKind =
+  | 'text'
+  | 'numerical'
+  | 'formula'
+  | 'derivative'
+  | 'diagram'
+  | 'table'
+  | 'mixed'
 
 export type PageImage = {
   pageIndex: number
@@ -33,6 +40,10 @@ export type ExtractedBlock = {
   mathLatex?: string
   /** Structured description of a drawn figure, graph, or labelled diagram. */
   diagramDescription?: string
+  /** Tabular answer cells when contentKind is "table" (rows of cell strings). */
+  tableData?: string[][]
+  /** Label this block continues from a previous page (same answer, new page). */
+  continuesFrom?: string
   /** Crossed-out / struck draft text — exclude from grading. */
   isStrikethrough?: boolean
   /** Extra pages this block spans (same text region continued) */

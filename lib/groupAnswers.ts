@@ -1,11 +1,14 @@
+import { bboxesAreSpatiallySeparate } from './bboxRepair'
 import { inferContentKind } from './blockContent'
 import {
   looksLikeAmbedkar,
   looksLikeLargestPlanet,
   looksLikePlantCell,
   looksLikeProfitCalc,
+  looksLikeSodiumPeriodic,
+  looksLikeStandaloneShortAnswer,
   looksLikeTriangleArea,
-} from './enrichAnswers'
+} from './contentTopics'
 import { findLabelAnywhere } from './findLabel'
 import { normalizeLabel } from './normalizeLabel'
 import type { BBox, ExtractedBlock } from './types'
@@ -116,8 +119,6 @@ function mergeInto(target: ExtractedBlock, next: ExtractedBlock): ExtractedBlock
   }
 }
 
-/** Drop near-duplicate answer bodies (same page photographed twice). Prefer labeled copies.
- * Never merge blocks that already have different normalized labels. */
 export function dedupeAnswerBlocks(blocks: ExtractedBlock[]): ExtractedBlock[] {
   const out: ExtractedBlock[] = []
   for (const block of blocks) {
@@ -134,7 +135,6 @@ export function dedupeAnswerBlocks(blocks: ExtractedBlock[]): ExtractedBlock[] {
     const prev = out[idx]
     const prevLabeled = Boolean(prev.labelNumber || prev.labelWritten)
     const nextLabeled = Boolean(block.labelNumber || block.labelWritten)
-    // Keep the richer / labeled version
     if ((!prevLabeled && nextLabeled) || block.text.length > prev.text.length * 1.1) {
       out[idx] = {
         ...block,
@@ -152,17 +152,10 @@ export function dedupeAnswerBlocks(blocks: ExtractedBlock[]): ExtractedBlock[] {
   return out
 }
 
-function looksLikeStandaloneShortAnswer(text: string): boolean {
-  const t = clean(text)
-  if (t.length > 220) return false
-  return looksLikeLargestPlanet(t) || looksLikeAmbedkar(t)
-}
-
 function topicsConflictForMerge(current: ExtractedBlock, next: ExtractedBlock): boolean {
   const ct = current.text || ''
   const nt = next.text || ''
   if (looksLikeStandaloneShortAnswer(nt)) return true
-  // Never glue triangle / plant / profit across unlabeled boundaries
   if (looksLikeTriangleArea(nt) && !looksLikeTriangleArea(ct)) return true
   if (looksLikePlantCell(nt) && !looksLikePlantCell(ct)) return true
   if (looksLikeProfitCalc(nt) && !looksLikeProfitCalc(ct)) return true
@@ -170,13 +163,13 @@ function topicsConflictForMerge(current: ExtractedBlock, next: ExtractedBlock): 
   if (looksLikePlantCell(nt) && looksLikeTriangleArea(ct)) return true
   if (looksLikeLargestPlanet(nt) && !looksLikeLargestPlanet(ct)) return true
   if (looksLikeAmbedkar(nt) && !looksLikeAmbedkar(ct)) return true
+  if (looksLikeSodiumPeriodic(nt) && !looksLikeSodiumPeriodic(ct)) return true
   return false
 }
 
 /**
  * Group consecutive answer lines under the last strong question label.
- * Re-scans each fragment for Q# labels anywhere in the text before merging.
- * Does not glue short GK / cross-topic fragments onto the previous label.
+ * Does not assign labels from content — that happens at map time with the question paper.
  */
 export function groupAnswersByLabel(blocks: ExtractedBlock[]): ExtractedBlock[] {
   const usable = blocks.filter((b) => !b.isStrikethrough && clean(b.text).length > 0)
@@ -201,6 +194,17 @@ export function groupAnswersByLabel(blocks: ExtractedBlock[]): ExtractedBlock[] 
       continue
     }
 
+    if (
+      current &&
+      current.bbox &&
+      block.bbox &&
+      bboxesAreSpatiallySeparate(current.bbox, block.bbox)
+    ) {
+      groups.push(current)
+      current = { ...block }
+      continue
+    }
+
     if (current && !topicsConflictForMerge(current, block)) {
       current = mergeInto(current, block)
       continue
@@ -210,33 +214,11 @@ export function groupAnswersByLabel(blocks: ExtractedBlock[]): ExtractedBlock[] 
       groups.push(current)
       current = null
     }
-    // Seed obvious topic labels so unlabeled fragments are not left orphaned
-    let seeded: ExtractedBlock = { ...block }
-    if (
-      !normalizeLabel(seeded.labelNumber || seeded.labelWritten) &&
-      looksLikeTriangleArea(seeded.text || '') &&
-      !looksLikePlantCell(seeded.text || '') &&
-      !looksLikeProfitCalc(seeded.text || '')
-    ) {
-      seeded = { ...seeded, labelNumber: '8', labelWritten: '8' }
-    } else if (
-      !normalizeLabel(seeded.labelNumber || seeded.labelWritten) &&
-      looksLikePlantCell(seeded.text || '') &&
-      !looksLikeTriangleArea(seeded.text || '')
-    ) {
-      seeded = { ...seeded, labelNumber: '2', labelWritten: '2' }
-    } else if (
-      !normalizeLabel(seeded.labelNumber || seeded.labelWritten) &&
-      looksLikeProfitCalc(seeded.text || '')
-    ) {
-      seeded = { ...seeded, labelNumber: '1', labelWritten: '1' }
-    }
-    groups.push(seeded)
+    groups.push({ ...block })
   }
 
   if (current) groups.push(current)
 
-  // Merge consecutive groups that share the same normalized label
   const byLabel: ExtractedBlock[] = []
   for (const g of groups) {
     const prev = byLabel[byLabel.length - 1]
