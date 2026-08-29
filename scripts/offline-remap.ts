@@ -49,7 +49,7 @@ async function main() {
 
   const questions = report.questions
   const rawAnswers = report.answers
-  const answers = enrichAnswerLabels(rawAnswers)
+  const answers = enrichAnswerLabels(rawAnswers, questions)
 
   console.log(`Raw answers: ${rawAnswers.length} → enriched: ${answers.length}`)
   console.log(

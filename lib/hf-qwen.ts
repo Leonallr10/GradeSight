@@ -154,7 +154,7 @@ function pageNeedsShortAnswerSupplement(
   if (mainNums.length >= 2) {
     for (let i = 0; i < mainNums.length - 1; i++) {
       const gap = mainNums[i + 1] - mainNums[i]
-      if (gap > 1 && gap <= 3) return true
+      if (gap > 1 && gap <= 8) return true
     }
   }
 

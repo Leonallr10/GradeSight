@@ -17,7 +17,7 @@ const questions = JSON.parse(readFileSync(qPath, 'utf8')) as ExtractedBlock[]
 const live = JSON.parse(readFileSync(livePath, 'utf8'))
 const rawAnswers = live.answers as ExtractedBlock[]
 
-const fixedAnswers = enrichAnswerLabels(rawAnswers)
+const fixedAnswers = enrichAnswerLabels(rawAnswers, questions)
 const report = evaluateExtract({ questions, answers: fixedAnswers })
 
 writeFileSync(join(OUT, 'stage-extract-offline.json'), JSON.stringify(report, null, 2))

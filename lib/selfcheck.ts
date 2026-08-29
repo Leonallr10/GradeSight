@@ -38,6 +38,51 @@ function block(
   }
 }
 
+/** Representative question paper for question-driven label assignment tests. */
+function vernaQuestionPaper(): ExtractedBlock[] {
+  return [
+    block({
+      id: 'rq1',
+      text: 'A shopkeeper buys a bicycle for profit 15%. Find the selling price.',
+      labelNumber: '1',
+    }),
+    block({ id: 'rq2', text: 'Draw and label a diagram of a plant cell', labelNumber: '2' }),
+    block({ id: 'rq1b', text: 'find g(f(3)) for f(x) and g(x)', labelNumber: '1(b)' }),
+    block({ id: 'rq3b', text: 'A ladder slides down a wall find base', labelNumber: '3(b)' }),
+    block({
+      id: 'rq4',
+      text: 'Which is the largest planet in our solar system?',
+      labelNumber: '4',
+    }),
+    block({ id: 'rq5a', text: 'Draw methanal HCHO and name functional group', labelNumber: '5(a)' }),
+    block({
+      id: 'rq5b',
+      text: 'Sodium Na group and period in periodic table',
+      labelNumber: '5(b)',
+    }),
+    block({ id: 'rq7', text: "State Newton's laws of motion", labelNumber: '7' }),
+    block({
+      id: 'rq8',
+      text: 'Find the area of a right-angled triangle with base 12 cm and height 9 cm',
+      labelNumber: '8',
+    }),
+    block({
+      id: 'rq9',
+      text: 'Draw a labeled diagram showing photosynthesis inputs and outputs',
+      labelNumber: '9',
+    }),
+    block({ id: 'rq9a', text: 'Marie Curie Nobel prize physics', labelNumber: '9(a)' }),
+    block({ id: 'rq9b', text: 'Mars is the red planet', labelNumber: '9(b)' }),
+    block({
+      id: 'rq10',
+      text: "Who is known as the 'Father of the Indian Constitution'?",
+      labelNumber: '10',
+    }),
+  ]
+}
+
+const mockEmbed = async (texts: string[]) => texts.map(() => [0])
+
 async function main() {
   // --- basics ---
   check('label_11a', normalizeLabel('11 (a)') === '11a', '11 (a) → 11a')
@@ -108,7 +153,8 @@ async function main() {
       bbox: { x: 0.1, y: 0.2, w: 0.4, h: 0.2 },
     }),
   ]
-  const subPairs = await mapAnswersToQuestions(subQs, subAs, async () => [])
+/** Mock embed: one zero vector per text (for unit tests without API). */
+  const subPairs = await mapAnswersToQuestions(subQs, subAs, mockEmbed)
   check(
     'subpart_match_independent',
     subPairs.filter((p) => p.status === 'matched').length === 2 &&
@@ -136,7 +182,7 @@ async function main() {
       bbox: { x: 0.2, y: 0.6, w: 0.5, h: 0.2 },
     }),
   ]
-  const ooPairs = await mapAnswersToQuestions(ooQs, ooAs, async () => [])
+  const ooPairs = await mapAnswersToQuestions(ooQs, ooAs, mockEmbed)
   check(
     'out_of_order',
     ooPairs.find((p) => p.question?.id === 'q1a')?.answer?.id === 'a1a' &&
@@ -157,7 +203,7 @@ async function main() {
       bbox: { x: 0.1, y: 0.1, w: 0.3, h: 0.1 },
     }),
   ]
-  const uaPairs = await mapAnswersToQuestions(uaQs, uaAs, async () => [])
+  const uaPairs = await mapAnswersToQuestions(uaQs, uaAs, mockEmbed)
   check(
     'unanswered',
     uaPairs.find((p) => p.question?.id === 'q2')?.status === 'unanswered' &&
@@ -181,7 +227,7 @@ async function main() {
       bbox: { x: 0.1, y: 0.5, w: 0.4, h: 0.2 },
     }),
   ]
-  const umPairs = await mapAnswersToQuestions(umQs, umAs, async () => [])
+  const umPairs = await mapAnswersToQuestions(umQs, umAs, mockEmbed)
   check(
     'unmatched_answer',
     umPairs.some((p) => p.status === 'unmatched_answer' && p.answer?.id === 'a11'),
@@ -219,7 +265,7 @@ async function main() {
       extraPages: [{ pageIndex: 2, bbox: { x: 0.1, y: 0.05, w: 0.8, h: 0.3 } }],
     }),
   ]
-  const mpPairs = await mapAnswersToQuestions(mpQs, mpAs, async () => [])
+  const mpPairs = await mapAnswersToQuestions(mpQs, mpAs, mockEmbed)
   const mpMatched = mpPairs.find((p) => p.status === 'matched')
   check(
     'multipage_span',
@@ -236,20 +282,24 @@ async function main() {
   check('multipage_ok', mpEval.accuracy.multipage_ok === true, 'mapping eval multipage_ok')
 
   // --- Edge: parent label enrich 9 → 9(a)/9(b) ---
-  const enriched = enrichAnswerLabels([
-    block({
-      id: 'parent9',
-      text: '(a) Marie Curie, in Physics\n(b) Mars is the Red Planet',
-      labelNumber: '9',
-      bbox: { x: 0.1, y: 0.4, w: 0.5, h: 0.3 },
-    }),
-    block({
-      id: 'bad3b',
-      text: 'f(x) = 2x - 5, g(x) = x^2 + 1, find g(f(3)) f(3)=1',
-      labelNumber: '3(b)',
-      bbox: { x: 0.1, y: 0.1, w: 0.4, h: 0.2 },
-    }),
-  ])
+  const repairQs = vernaQuestionPaper()
+  const enriched = enrichAnswerLabels(
+    [
+      block({
+        id: 'parent9',
+        text: '(a) Marie Curie, in Physics\n(b) Mars is the Red Planet',
+        labelNumber: '9',
+        bbox: { x: 0.1, y: 0.4, w: 0.5, h: 0.3 },
+      }),
+      block({
+        id: 'bad3b',
+        text: 'f(x) = 2x - 5, g(x) = x^2 + 1, find g(f(3)) f(3)=1',
+        labelNumber: '3(b)',
+        bbox: { x: 0.1, y: 0.1, w: 0.4, h: 0.2 },
+      }),
+    ],
+    repairQs,
+  )
   check(
     'parent_label_enrich',
     enriched.some((b) => normalizeLabel(b.labelNumber) === '9a') &&
@@ -265,19 +315,27 @@ async function main() {
   )
 
   // --- Mega-block topic split (photo + dry cell + Newton) ---
-  const mega = enrichAnswerLabels([
-    block({
-      id: 'mega7',
-      text:
-        'Photosynthesis is when plants make food using sunlight.\n' +
-        '6CO2 + 6H2O → C6H12O6 + 6O2\n' +
-        'A dry cell diagram with Carbon Rod (Anode) and Zinc Can (Cathode).\n' +
-        "Newton's Laws 1st: Law of Inertia. 2nd: F=ma. 3rd: equal and opposite reaction.",
-      labelNumber: '7',
-      bbox: { x: 0.1, y: 0.1, w: 0.8, h: 0.8 },
-      contentKind: 'diagram',
-    }),
-  ])
+  const megaQs = [
+    block({ id: 'mq4', text: 'Explain photosynthesis process', labelNumber: '4' }),
+    block({ id: 'mq7', text: "State Newton's laws of motion", labelNumber: '7' }),
+    block({ id: 'mq8', text: 'Draw a dry cell diagram with anode and cathode', labelNumber: '8' }),
+  ]
+  const mega = enrichAnswerLabels(
+    [
+      block({
+        id: 'mega7',
+        text:
+          'Photosynthesis is when plants make food using sunlight.\n' +
+          '6CO2 + 6H2O → C6H12O6 + 6O2\n' +
+          'A dry cell diagram with Carbon Rod (Anode) and Zinc Can (Cathode).\n' +
+          "Newton's Laws 1st: Law of Inertia. 2nd: F=ma. 3rd: equal and opposite reaction.",
+        labelNumber: '7',
+        bbox: { x: 0.1, y: 0.1, w: 0.8, h: 0.8 },
+        contentKind: 'diagram',
+      }),
+    ],
+    megaQs,
+  )
   check(
     'mega_block_split',
     mega.some((b) => normalizeLabel(b.labelNumber) === '4') &&
@@ -287,16 +345,19 @@ async function main() {
   )
 
   // --- Triangle + plant-cell mega split (Verna Q8/Q2) ---
-  const triPlant = enrichAnswerLabels([
-    block({
-      id: 'mega2',
-      text:
-        'Given base: 12cm height: 9cm Formula A = (1/2) * b * h A = (1/2) * 12 * 9 A = 54 cm^2\n' +
-        'A plant cell contains a cell wall, cell membrane, cytoplasm, nucleus, chloroplasts and a large central vacuole.',
-      labelNumber: '2',
-      bbox: { x: 0.1, y: 0.2, w: 0.7, h: 0.4 },
-    }),
-  ])
+  const triPlant = enrichAnswerLabels(
+    [
+      block({
+        id: 'mega2',
+        text:
+          'Given base: 12cm height: 9cm Formula A = (1/2) * b * h A = (1/2) * 12 * 9 A = 54 cm^2\n' +
+          'A plant cell contains a cell wall, cell membrane, cytoplasm, nucleus, chloroplasts and a large central vacuole.',
+        labelNumber: '2',
+        bbox: { x: 0.1, y: 0.2, w: 0.7, h: 0.4 },
+      }),
+    ],
+    repairQs,
+  )
   check(
     'triangle_plant_split',
     triPlant.some((b) => normalizeLabel(b.labelNumber) === '8') &&
@@ -312,16 +373,19 @@ async function main() {
   )
 
   // --- Profit + triangle mega (page-1 glue under label 1) ---
-  const profitTri = enrichAnswerLabels([
-    block({
-      id: 'mega1',
-      text:
-        'Given CP: 2400 Profit: 15% Profit = 360 SP = 2760\n' +
-        'Area of right angled triangle given base = 12cm height = 9cm Formula A = (1/2) * b * h A = 54 cm^2',
-      labelNumber: '1',
-      bbox: { x: 0.1, y: 0.05, w: 0.7, h: 0.5 },
-    }),
-  ])
+  const profitTri = enrichAnswerLabels(
+    [
+      block({
+        id: 'mega1',
+        text:
+          'Given CP: 2400 Profit: 15% Profit = 360 SP = 2760\n' +
+          'Area of right angled triangle given base = 12cm height = 9cm Formula A = (1/2) * b * h A = 54 cm^2',
+        labelNumber: '1',
+        bbox: { x: 0.1, y: 0.05, w: 0.7, h: 0.5 },
+      }),
+    ],
+    repairQs,
+  )
   check(
     'profit_triangle_split',
     profitTri.some((b) => normalizeLabel(b.labelNumber) === '1') &&
@@ -343,7 +407,7 @@ async function main() {
         labelNumber: '1',
       }),
     ],
-    async () => [],
+    mockEmbed,
   )
   check(
     'profit_triangle_q8_matched',
@@ -352,20 +416,23 @@ async function main() {
   )
 
   // --- Photo + plant: parent organelle diagram goes to Q2, not Q9 ---
-  const photoPlant = enrichAnswerLabels([
-    block({
-      id: 'mega9',
-      text:
-        'Photosynthesis is a process by which Green plants prepare Their food using CO2 and H2O.\n' +
-        '6CO2 + 6H2O → C6H12O6 + 6O2\n' +
-        'A diagram of a plant cell with various organelles labeled, including smooth ER, rough ER, nucleus, large control vacuole, amyloplast, cell wall, cell membrane, golgi apparatus, vesicles, vacuole, chloroplast, mitochondrian, cytoplasm.',
-      labelNumber: '9',
-      contentKind: 'diagram',
-      diagramDescription:
-        'A diagram of a plant cell with various organelles labeled, including smooth ER, rough ER, nucleus, large control vacuole, amyloplast, cell wall, cell membrane, golgi apparatus, vesicles, vacuole, chloroplast, mitochondrian, cytoplasm.',
-      bbox: { x: 0.1, y: 0.1, w: 0.8, h: 0.7 },
-    }),
-  ])
+  const photoPlant = enrichAnswerLabels(
+    [
+      block({
+        id: 'mega9',
+        text:
+          'Photosynthesis is a process by which Green plants prepare Their food using CO2 and H2O.\n' +
+          '6CO2 + 6H2O → C6H12O6 + 6O2\n' +
+          'A diagram of a plant cell with various organelles labeled, including smooth ER, rough ER, nucleus, large control vacuole, amyloplast, cell wall, cell membrane, golgi apparatus, vesicles, vacuole, chloroplast, mitochondrian, cytoplasm.',
+        labelNumber: '9',
+        contentKind: 'diagram',
+        diagramDescription:
+          'A diagram of a plant cell with various organelles labeled, including smooth ER, rough ER, nucleus, large control vacuole, amyloplast, cell wall, cell membrane, golgi apparatus, vesicles, vacuole, chloroplast, mitochondrian, cytoplasm.',
+        bbox: { x: 0.1, y: 0.1, w: 0.8, h: 0.7 },
+      }),
+    ],
+    repairQs,
+  )
   const pp2 = photoPlant.find((b) => normalizeLabel(b.labelNumber) === '2')
   const pp9 = photoPlant.find((b) => normalizeLabel(b.labelNumber) === '9')
   check(
@@ -404,7 +471,7 @@ async function main() {
       pageIndex: 1,
     }),
   ]
-  const diagPairs = await mapAnswersToQuestions(diagQs, diagAs, async () => [])
+  const diagPairs = await mapAnswersToQuestions(diagQs, diagAs, mockEmbed)
   const dq2 = diagPairs.find((p) => p.question?.id === 'dq2')
   check(
     'prefer_diagram_for_q2',
@@ -422,20 +489,23 @@ async function main() {
   )
 
   // --- Short GK content→label repair ---
-  const gkRepair = enrichAnswerLabels([
-    block({
-      id: 'gk4',
-      text: 'Jaipur is the largest planet in solar system',
-      labelNumber: undefined,
-      bbox: { x: 0.1, y: 0.5, w: 0.5, h: 0.05 },
-    }),
-    block({
-      id: 'gk10',
-      text: 'DR. B. R. Ambedkar',
-      labelNumber: undefined,
-      bbox: { x: 0.1, y: 0.55, w: 0.4, h: 0.05 },
-    }),
-  ])
+  const gkRepair = enrichAnswerLabels(
+    [
+      block({
+        id: 'gk4',
+        text: 'Jaipur is the largest planet in solar system',
+        labelNumber: undefined,
+        bbox: { x: 0.1, y: 0.5, w: 0.5, h: 0.05 },
+      }),
+      block({
+        id: 'gk10',
+        text: 'DR. B. R. Ambedkar',
+        labelNumber: undefined,
+        bbox: { x: 0.1, y: 0.55, w: 0.4, h: 0.05 },
+      }),
+    ],
+    repairQs,
+  )
   check(
     'gk_label_repair',
     gkRepair.some((b) => normalizeLabel(b.labelNumber) === '4') &&
@@ -443,18 +513,21 @@ async function main() {
     'planet → 4, Ambedkar → 10',
   )
 
-  const chemInline = enrichAnswerLabels([
-    block({
-      id: 'chem-page',
-      text:
-        '4) Jaipur is the largest planet in solar system\n' +
-        '10 DR. B.R. Ambedkar\n' +
-        '5(a) methanol has the molecular formula HCHO\n' +
-        '5(b) sodium - symbol - (Na) atomic number - 11 group = 1 Period = 3',
-      labelNumber: '5(a)',
-      bbox: { x: 0.1, y: 0.1, w: 0.8, h: 0.8 },
-    }),
-  ])
+  const chemInline = enrichAnswerLabels(
+    [
+      block({
+        id: 'chem-page',
+        text:
+          '4) Jaipur is the largest planet in solar system\n' +
+          '10 DR. B.R. Ambedkar\n' +
+          '5(a) methanol has the molecular formula HCHO\n' +
+          '5(b) sodium - symbol - (Na) atomic number - 11 group = 1 Period = 3',
+        labelNumber: '5(a)',
+        bbox: { x: 0.1, y: 0.1, w: 0.8, h: 0.8 },
+      }),
+    ],
+    repairQs,
+  )
   check(
     'inline_chemistry_split',
     chemInline.some((b) => normalizeLabel(b.labelNumber) === '4') &&
@@ -463,13 +536,16 @@ async function main() {
     'glued chemistry page → 4 + 10 + 5(a) + 5(b)',
   )
 
-  const sodiumRepair = enrichAnswerLabels([
-    block({
-      id: 'na5b',
-      text: 'sodium - symbol - (Na) atomic number - 11 group = 1 Period = 3',
-      labelNumber: undefined,
-    }),
-  ])
+  const sodiumRepair = enrichAnswerLabels(
+    [
+      block({
+        id: 'na5b',
+        text: 'sodium - symbol - (Na) atomic number - 11 group = 1 Period = 3',
+        labelNumber: undefined,
+      }),
+    ],
+    repairQs,
+  )
   check(
     'sodium_label_repair',
     sodiumRepair.some((b) => normalizeLabel(b.labelNumber) === '5b'),
@@ -526,7 +602,7 @@ async function main() {
     }),
     block({ id: 'va10', text: 'DR. B. R. Ambedkar', labelNumber: undefined }),
   ]
-  const vernaPairs = await mapAnswersToQuestions(vernaQs, vernaAs, async () => [])
+  const vernaPairs = await mapAnswersToQuestions(vernaQs, vernaAs, mockEmbed)
   check(
     'verna_q8_matched',
     vernaPairs.find((p) => p.question?.id === 'vq8')?.status === 'matched',
@@ -548,6 +624,52 @@ async function main() {
     'Q10 matched via Ambedkar repair/rematch',
   )
 
+  const embeddedGk = enrichAnswerLabels(
+    [
+      block({
+        id: 'meth-gk',
+        text: 'Methanol has the molecular formula HCHO. Methanal contains the aldehyde group.\nDR. B. R. Ambedkar',
+        labelNumber: '5(a)',
+      }),
+    ],
+    repairQs,
+  )
+  check(
+    'split_embedded_ambedkar',
+    embeddedGk.some((b) => /ambedkar/i.test(b.text || '') && !normalizeLabel(b.labelNumber)?.startsWith('5')),
+    'Ambedkar peeled out of glued chemistry block',
+  )
+  const embeddedPairs = await mapAnswersToQuestions(
+    [
+      block({ id: 'eq4', text: 'Which is the largest planet in our solar system?', labelNumber: '4' }),
+      block({
+        id: 'eq10',
+        text: "Who is known as the 'Father of the Indian Constitution'?",
+        labelNumber: '10',
+      }),
+      block({ id: 'eq5a', text: 'Draw the structure of methanal (HCHO)', labelNumber: '5(a)' }),
+    ],
+    [
+      block({
+        id: 'ea5a',
+        text: 'Methanol has the molecular formula HCHO.\nDR. B. R. Ambedkar',
+        labelNumber: '5(a)',
+      }),
+      block({ id: 'ea4', text: 'Jaipur is the largest planet in solar system', labelNumber: undefined }),
+    ],
+    mockEmbed,
+  )
+  check(
+    'embedded_gk_q10_matched',
+    embeddedPairs.find((p) => p.question?.id === 'eq10')?.status === 'matched',
+    'Q10 matched after embedded Ambedkar split',
+  )
+  check(
+    'embedded_gk_q4_matched',
+    embeddedPairs.find((p) => p.question?.id === 'eq4')?.status === 'matched',
+    'Q4 still matched with embedded split',
+  )
+
   // --- Map-time enrich: mislabeled 3(b) composition matches Q1(b) ---
   const mapEnrichQs = [
     block({ id: 'mq1b', text: 'find g(f(3))', labelNumber: '1(b)' }),
@@ -561,7 +683,7 @@ async function main() {
       bbox: { x: 0.1, y: 0.1, w: 0.4, h: 0.2 },
     }),
   ]
-  const mapEnrichPairs = await mapAnswersToQuestions(mapEnrichQs, mapEnrichAs, async () => [])
+  const mapEnrichPairs = await mapAnswersToQuestions(mapEnrichQs, mapEnrichAs, mockEmbed)
   check(
     'map_time_enrich_1b',
     mapEnrichPairs.find((p) => p.question?.id === 'mq1b')?.status === 'matched' &&
@@ -598,7 +720,7 @@ async function main() {
     block({ id: 'a2', text: 'Chloroplast', labelNumber: '2 (a)' }),
     block({ id: 'a1', text: 'Conversion of light to chemical energy', labelNumber: '1' }),
   ]
-  const pairs = await mapAnswersToQuestions(questions, answers, async () => [])
+  const pairs = await mapAnswersToQuestions(questions, answers, mockEmbed)
   check(
     'exact_match_both',
     pairs.filter((p) => p.status === 'matched').length === 2,

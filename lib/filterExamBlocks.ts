@@ -1,4 +1,3 @@
-import { enrichAnswerLabels } from './enrichAnswers'
 import { groupAnswersByLabel } from './groupAnswers'
 import { inferLabelFromText } from './parseExtract'
 import { normalizeLabel, parseNormalizedLabel } from './normalizeLabel'
@@ -97,5 +96,5 @@ export function filterExtractedBlocks(
     return blocks.filter(isLikelyExamQuestion)
   }
   const cleaned = blocks.filter((b) => !isAnswerSheetNoise(b))
-  return enrichAnswerLabels(groupAnswersByLabel(cleaned))
+  return groupAnswersByLabel(cleaned)
 }

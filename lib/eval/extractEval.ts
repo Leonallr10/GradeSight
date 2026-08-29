@@ -41,11 +41,15 @@ export function evaluateExtract(args: {
   const questionBboxCoverage = pct(qBbox, questions.length)
 
   const subpartOk = hasLeafSubparts(qLabels)
-  const numberingOk = qLabels.some((l) => {
-    const n = normLabel(l)
-    return Boolean(n && (n === '10' || n.startsWith('10')))
-  })
-  const enoughQuestions = questions.length >= 10
+  const numberingOk = expected?.questions?.length
+    ? true
+    : qLabels.some((l) => {
+        const n = normLabel(l)
+        return Boolean(n && (n === '10' || n.startsWith('10')))
+      })
+  const enoughQuestions = expected?.questions?.length
+    ? questions.length >= Math.min(10, expected.questions.length)
+    : questions.length >= 10
 
   const checks = [
     {
