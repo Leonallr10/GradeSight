@@ -234,9 +234,22 @@ async function main() {
   const mapRes = await postJson<{ pairs: MappedPair[] }>(`${BASE}/api/map-answers`, {
     questions: qVal.blocks,
     answers: aVal.blocks,
-    answerPages: aPages,
   })
-  const pairs = mapRes.pairs
+  let pairs = mapRes.pairs
+  const repairPageIndices = [
+    ...new Set(
+      pairs.filter((p) => p.status === 'matched' && p.answer).map((p) => p.answer!.pageIndex),
+    ),
+  ].sort((a, b) => a - b)
+  for (const pageIndex of repairPageIndices) {
+    const page = aPages.find((p) => p.pageIndex === pageIndex)
+    if (!page) continue
+    const repairRes = await postJson<{ pairs: MappedPair[] }>(`${BASE}/api/repair-map-bboxes`, {
+      pairs,
+      pages: [page],
+    })
+    pairs = repairRes.pairs
+  }
   const matched = pairs.filter((p) => p.status === 'matched')
   const unanswered = pairs.filter((p) => p.status === 'unanswered')
   const unmatched = pairs.filter((p) => p.status === 'unmatched_answer')

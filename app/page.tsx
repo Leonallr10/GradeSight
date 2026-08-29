@@ -29,7 +29,7 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
   if (!res.ok) {
     if (res.status === 413) {
       throw new Error(
-        'Upload payload too large for the server. Try a shorter document or fewer pages.',
+        'Upload payload too large for the server (Vercel limit ~4.5MB per request). Use fewer pages, smaller PDFs, or re-deploy after the latest fix.',
       )
     }
     const msg = data?.error || `Request failed: ${url}`
@@ -246,11 +246,29 @@ export default function Page() {
 
       setStage('mapping')
       setStatusMessage('Matching answers to questions…')
-      const mapRes = await postJson<{ pairs: MappedPair[] }>('/api/map-answers', {
+    const mapRes = await postJson<{ pairs: MappedPair[] }>('/api/map-answers', {
         questions: qValBlocks,
         answers: aValBlocks,
-        answerPages: aPages,
       })
+      let pairs = mapRes.pairs
+
+      const repairPages = [...new Set(
+        pairs
+          .filter((p) => p.status === 'matched' && p.answer)
+          .map((p) => p.answer!.pageIndex),
+      )].sort((a, b) => a - b)
+
+      for (let i = 0; i < repairPages.length; i++) {
+        const pageIndex = repairPages[i]
+        const page = aPages.find((p) => p.pageIndex === pageIndex)
+        if (!page) continue
+        setStatusMessage(`Repairing answer highlights… page ${i + 1} of ${repairPages.length}`)
+        const repairRes = await postJson<{ pairs: MappedPair[] }>('/api/repair-map-bboxes', {
+          pairs,
+          pages: [page],
+        })
+        pairs = repairRes.pairs
+      }
       const hasQuestions = mapRes.pairs.some((p) => p.question)
       const unmatchedOnly =
         !hasQuestions && mapRes.pairs.some((p) => p.status === 'unmatched_answer')
@@ -259,12 +277,12 @@ export default function Page() {
           'Answers were extracted but no questions could be matched. Upload the printed question paper in the left slot and the handwritten answer sheet on the right.',
         )
       }
-      setPairs(mapRes.pairs)
+      setPairs(pairs)
 
       setStage('grading')
       setStatusMessage('Grading matched answers with Groq…')
       const gradeRes = await postJson<{ summary: GradingSummary }>('/api/grade', {
-        pairs: mapRes.pairs,
+        pairs,
       })
       setSummary(gradeRes.summary)
       setGrades(gradeRes.summary.grades)

@@ -72,6 +72,16 @@ export function blockNeedsBboxRelocalize(block: ExtractedBlock): boolean {
   return false
 }
 
+/** Page indices that need HF re-localize after mapping (for per-page repair calls). */
+export function pageIndicesForPairBboxRepair(pairs: MappedPair[]): number[] {
+  const indices = new Set<number>()
+  for (const pair of pairs) {
+    if (pair.status !== 'matched' || !pair.answer) continue
+    if (blockNeedsBboxRelocalize(pair.answer)) indices.add(pair.answer.pageIndex)
+  }
+  return [...indices].sort((a, b) => a - b)
+}
+
 /** Re-localize answer bboxes in matched pairs after map-time splits. */
 export async function repairMappedPairBboxes(
   pairs: MappedPair[],
@@ -82,9 +92,12 @@ export async function repairMappedPairBboxes(
   const toRepair: ExtractedBlock[] = []
   const seen = new Set<string>()
 
+  const pageIndexSet = new Set(pages.map((p) => p.pageIndex))
+
   for (const pair of pairs) {
     if (pair.status !== 'matched' || !pair.answer) continue
     const answer = pair.answer
+    if (!pageIndexSet.has(answer.pageIndex)) continue
     if (!blockNeedsBboxRelocalize(answer)) continue
     if (seen.has(answer.id)) continue
     seen.add(answer.id)

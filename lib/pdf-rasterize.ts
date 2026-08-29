@@ -3,7 +3,9 @@
 import type { PageImage } from './types'
 
 const MAX_PAGES = 20
-const RENDER_SCALE = 1.5
+/** Lower scale + JPEG keeps each API page under Vercel ~4.5MB body limit. */
+const RENDER_SCALE = 1.2
+const JPEG_QUALITY = 0.82
 
 /**
  * Use the legacy build — modern pdfjs requires Map.getOrInsertComputed
@@ -42,11 +44,11 @@ async function rasterizePdf(file: File): Promise<PageImage[]> {
     if (!ctx) throw new Error('Could not get canvas context')
 
     await page.render({ canvasContext: ctx, viewport, canvas }).promise
-    const dataUrl = canvas.toDataURL('image/png')
+    const dataUrl = canvas.toDataURL('image/jpeg', JPEG_QUALITY)
     pages.push({
       pageIndex: i - 1,
       imageBase64: dataUrl,
-      mimeType: 'image/png',
+      mimeType: 'image/jpeg',
     })
   }
 

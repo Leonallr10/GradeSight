@@ -8,13 +8,16 @@ export const maxDuration = 300
 
 const bodySchema = z.object({
   blocks: z.array(extractedBlockSchema),
-  pages: z.array(
-    z.object({
-      pageIndex: z.number().int().min(0),
-      imageBase64: z.string().min(1),
-      mimeType: z.string().optional(),
-    }),
-  ),
+  pages: z
+    .array(
+      z.object({
+        pageIndex: z.number().int().min(0),
+        imageBase64: z.string().min(1),
+        mimeType: z.string().optional(),
+      }),
+    )
+    .min(1)
+    .max(1),
 })
 
 /** Validate bboxes from HF extract. Repair uses HF VL when needed (no Gemini). */
