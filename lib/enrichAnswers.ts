@@ -20,7 +20,8 @@ import {
 import { findLabelAnywhere } from './findLabel'
 import { assignLabelsFromQuestions, validateAnswerLabels } from './questionIndex'
 import { formatLabel, normalizeLabel, parseNormalizedLabel } from './normalizeLabel'
-import type { BBox, ExtractedBlock } from './types'
+import { sliceBboxByTextRange, sliceBboxEqual } from './bboxRepair'
+import type { ExtractedBlock } from './types'
 
 // Re-export content detectors for backward-compatible imports
 export {
@@ -34,6 +35,10 @@ export {
 } from './contentTopics'
 
 type InlineLabelHit = { label: string; start: number }
+
+function blockLabelSource(block: ExtractedBlock): string {
+  return [block.text, block.diagramDescription].filter(Boolean).join('\n')
+}
 
 /** Find mid-block answer labels from visible numbering on the sheet. */
 function findInlineAnswerLabels(text: string): InlineLabelHit[] {
@@ -68,6 +73,11 @@ function findInlineAnswerLabels(text: string): InlineLabelHit[] {
     push('10', m.index)
   }
 
+  const spacedSubRe = /(?:^|\n)\s*(\d{1,2})\s+([a-z])\s*[\):.]/gi
+  while ((m = spacedSubRe.exec(text)) !== null) {
+    push(`${m[1]}(${m[2].toLowerCase()})`, m.index)
+  }
+
   hits.sort((a, b) => a.start - b.start)
   return hits
 }
@@ -76,15 +86,15 @@ export function splitInlineLabeledAnswerBlocks(blocks: ExtractedBlock[]): Extrac
   const out: ExtractedBlock[] = []
 
   for (const block of blocks) {
-    const text = block.text || ''
-    const hits = findInlineAnswerLabels(text)
+    const source = blockLabelSource(block)
+    const hits = findInlineAnswerLabels(source)
     if (hits.length < 2) {
       out.push(block)
       continue
     }
 
     // Prefer parent (a)/(b) expansion over numeric inline splits when both present
-    if (/\(\s*[a-z]\s*\)/i.test(text) && hits.every((h) => /^\d+$/.test(h.label))) {
+    if (/\(\s*[a-z]\s*\)/i.test(source) && hits.every((h) => /^\d+$/.test(h.label))) {
       out.push(block)
       continue
     }
@@ -92,8 +102,8 @@ export function splitInlineLabeledAnswerBlocks(blocks: ExtractedBlock[]): Extrac
     let emitted = 0
     for (let i = 0; i < hits.length; i++) {
       const start = hits[i].start
-      const end = i + 1 < hits.length ? hits[i + 1].start : text.length
-      const slice = text.slice(start, end).trim()
+      const end = i + 1 < hits.length ? hits[i + 1].start : source.length
+      const slice = source.slice(start, end).trim()
       if (slice.length < 6) continue
       emitted++
       out.push({
@@ -102,7 +112,7 @@ export function splitInlineLabeledAnswerBlocks(blocks: ExtractedBlock[]): Extrac
         text: slice,
         labelNumber: hits[i].label,
         labelWritten: hits[i].label,
-        bbox: sliceBbox(block.bbox, i, hits.length),
+        bbox: sliceBboxByTextRange(block.bbox, start, end, source.length),
         extraPages: undefined,
       })
     }
@@ -166,7 +176,7 @@ export function splitEmbeddedShortLines(blocks: ExtractedBlock[]): ExtractedBloc
         text: peeled[i],
         labelNumber: undefined,
         labelWritten: undefined,
-        bbox: sliceBbox(block.bbox, i, peeled.length + 1),
+        bbox: sliceBboxEqual(block.bbox, i, peeled.length + 1),
         diagramDescription: undefined,
         mathLatex: undefined,
         contentKind: 'text',
@@ -203,17 +213,6 @@ export function dedupeSameLabelRichBlocks(blocks: ExtractedBlock[]): ExtractedBl
 
 /** @deprecated alias */
 export const dedupeSameLabelPlantBlocks = dedupeSameLabelRichBlocks
-
-function sliceBbox(bbox: BBox | undefined, index: number, total: number): BBox | undefined {
-  if (!bbox || total <= 1) return bbox
-  const h = Math.max(0.02, bbox.h / total)
-  return {
-    x: bbox.x,
-    y: Math.min(0.98, bbox.y + h * index),
-    w: bbox.w,
-    h,
-  }
-}
 
 function looksLikePlantOrganelleDiagram(desc: string): boolean {
   const t = desc.toLowerCase()
@@ -288,7 +287,7 @@ function splitAtTopicBoundaries(
       labelWritten: undefined,
       contentKind: meta.diagramDescription ? 'diagram' : sections[i].kind || meta.contentKind,
       diagramDescription: meta.diagramDescription,
-      bbox: sliceBbox(block.bbox, i, sections.length),
+      bbox: sliceBboxByTextRange(block.bbox, start, end, text.length),
       extraPages: undefined,
     })
   }
@@ -508,13 +507,18 @@ export function expandParentAnswerLabels(blocks: ExtractedBlock[]): ExtractedBlo
     for (let i = 0; i < sub.length; i++) {
       const label = formatLabel({ num: parts.num, letter: sub[i].letter })
       if (!label) continue
+      const start = block.text.indexOf(sub[i].text)
+      const end = start >= 0 ? start + sub[i].text.length : block.text.length
       out.push({
         ...block,
         id: `${block.id}-sub-${sub[i].letter}`,
         text: sub[i].text,
         labelNumber: label,
         labelWritten: label,
-        bbox: sliceBbox(block.bbox, i, sub.length),
+        bbox:
+          start >= 0
+            ? sliceBboxByTextRange(block.bbox, start, end, block.text.length)
+            : sliceBboxEqual(block.bbox, i, sub.length),
       })
     }
   }

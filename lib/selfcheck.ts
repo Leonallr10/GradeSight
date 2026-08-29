@@ -3,6 +3,8 @@
  * Run: npm run selfcheck
  */
 import { coerceBbox, isValidBbox, partitionByBbox } from './bboxCheck'
+import { bboxesAreSpatiallySeparate, padBbox, sliceBboxByTextRange } from './bboxRepair'
+import { needsChemVlmEnhancement } from './chem-vlm'
 import { enrichAnswerLabels } from './enrichAnswers'
 import { evaluateExtract, evaluateGrading, evaluateMapping } from './eval'
 import { normalizeLabel } from './normalizeLabel'
@@ -114,6 +116,39 @@ async function main() {
     block({ id: '2', text: 'bad', bbox: { x: -1, y: 0, w: 2, h: 2 } }),
   ])
   check('bbox_partition', valid.length === 1 && invalid.length === 1, 'partition valid/invalid')
+
+  check(
+    'bbox_slice_proportional',
+    (() => {
+      const parent = { x: 0.1, y: 0.1, w: 0.8, h: 0.8 }
+      const top = sliceBboxByTextRange(parent, 0, 40, 100)
+      const bottom = sliceBboxByTextRange(parent, 40, 100, 100)
+      return (
+        top !== undefined &&
+        bottom !== undefined &&
+        top.y === 0.1 &&
+        bottom.y > top.y &&
+        bottom.y + bottom.h <= 0.91
+      )
+    })(),
+    'proportional bbox slice',
+  )
+  check(
+    'bbox_pad',
+    (() => {
+      const p = padBbox({ x: 0.1, y: 0.1, w: 0.2, h: 0.2 })
+      return p.x < 0.1 && p.y < 0.1 && p.w > 0.2 && isValidBbox(p)
+    })(),
+    'pad bbox expands safely',
+  )
+  check(
+    'bbox_spatial_separate',
+    bboxesAreSpatiallySeparate(
+      { x: 0.1, y: 0.1, w: 0.8, h: 0.35 },
+      { x: 0.1, y: 0.55, w: 0.8, h: 0.35 },
+    ),
+    'stacked diagram regions are separate',
+  )
 
   check(
     'cosine_identical',
@@ -534,6 +569,54 @@ async function main() {
       chemInline.some((b) => normalizeLabel(b.labelNumber) === '5b') &&
       chemInline.some((b) => normalizeLabel(b.labelNumber) === '10'),
     'glued chemistry page → 4 + 10 + 5(a) + 5(b)',
+  )
+
+  check(
+    'chem_vlm_select_methanal_diagram',
+    needsChemVlmEnhancement(
+      block({
+        id: 'cv1',
+        text: 'methanal HCHO structure',
+        contentKind: 'diagram',
+        diagramDescription: 'hand-drawn aldehyde',
+      }),
+    ),
+    'methanal diagram → ChemVLM candidate',
+  )
+  check(
+    'chem_vlm_select_sodium_formula',
+    needsChemVlmEnhancement(
+      block({
+        id: 'cv2',
+        text: 'sodium Na group 1 period 3',
+        contentKind: 'formula',
+        mathLatex: 'Na',
+      }),
+    ),
+    'sodium formula → ChemVLM candidate',
+  )
+  check(
+    'chem_vlm_skip_plant_diagram',
+    !needsChemVlmEnhancement(
+      block({
+        id: 'cv3',
+        text: 'plant cell with chloroplast and vacuole',
+        contentKind: 'diagram',
+        diagramDescription: 'labeled plant cell',
+      }),
+    ),
+    'biology diagram without chem topic → skip ChemVLM',
+  )
+  check(
+    'chem_vlm_skip_chem_text_only',
+    !needsChemVlmEnhancement(
+      block({
+        id: 'cv4',
+        text: 'sodium atomic number 11',
+        contentKind: 'text',
+      }),
+    ),
+    'chemistry text without diagram/formula kind → skip ChemVLM',
   )
 
   const sodiumRepair = enrichAnswerLabels(

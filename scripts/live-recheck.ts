@@ -234,6 +234,7 @@ async function main() {
   const mapRes = await postJson<{ pairs: MappedPair[] }>(`${BASE}/api/map-answers`, {
     questions: qVal.blocks,
     answers: aVal.blocks,
+    answerPages: aPages,
   })
   const pairs = mapRes.pairs
   const matched = pairs.filter((p) => p.status === 'matched')

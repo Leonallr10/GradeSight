@@ -1,5 +1,6 @@
 import { InferenceClient } from '@huggingface/inference'
 import { coerceBbox } from './bboxCheck'
+import { blockContentForModel } from './blockContent'
 import { EXTRACT_PROMPT, extractRoleHint, isProviderCreditError, isProviderPermissionError, SUPPLEMENT_MISSED_ANSWERS_HINT } from './extractPrompt'
 import { filterExtractedBlocks } from './filterExamBlocks'
 import { normalizeLabel } from './normalizeLabel'
@@ -258,10 +259,13 @@ function sleep(ms: number) {
 export async function localizeBboxWithHf(
   page: PageImage,
   text: string,
+  labelHint?: string,
 ): Promise<BBox | null> {
   const client = getClient()
   const model = getModel()
   const { mime, data } = stripDataUrl(page.imageBase64)
+
+  const labelLine = labelHint ? `Question label on sheet: ${labelHint}\n` : ''
 
   const result = await client.chatCompletion({
     model,
@@ -271,7 +275,7 @@ export async function localizeBboxWithHf(
         content: [
           {
             type: 'text',
-            text: `Find the region on this page that contains this text (or the closest printed/handwritten match). Return ONLY JSON: {"x":0,"y":0,"w":0,"h":0} with values normalized 0–1, top-left origin. Do not re-extract the text.\n\nText:\n${text.slice(0, 800)}`,
+            text: `${labelLine}Find the tight bounding region on this page that fully contains this student answer (all lines, diagram strokes, and label text). Add a small margin so nothing is clipped. Return ONLY JSON: {"x":0,"y":0,"w":0,"h":0} with values normalized 0–1, top-left origin.\n\nAnswer content:\n${text.slice(0, 900)}`,
           },
           {
             type: 'image_url',
@@ -304,7 +308,9 @@ export async function repairBlocksWithHf(
       continue
     }
     try {
-      const bbox = await localizeBboxWithHf(page, block.text)
+      const content = blockContentForModel(block) || block.text
+      const labelHint = block.labelNumber || block.labelWritten
+      const bbox = await localizeBboxWithHf(page, content, labelHint)
       if (bbox) {
         repaired.push({ ...block, bbox, bboxSource: 'qwen' })
       } else {

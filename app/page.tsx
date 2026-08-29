@@ -249,6 +249,7 @@ export default function Page() {
       const mapRes = await postJson<{ pairs: MappedPair[] }>('/api/map-answers', {
         questions: qValBlocks,
         answers: aValBlocks,
+        answerPages: aPages,
       })
       const hasQuestions = mapRes.pairs.some((p) => p.question)
       const unmatchedOnly =

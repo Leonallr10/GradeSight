@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "tsx scripts/dev.ts",
+    "dev:next": "next dev",
     "build": "next build",
     "start": "next start",
     "selfcheck": "tsx lib/selfcheck.ts",
@@ -11,7 +12,8 @@
     "score": "tsx scripts/score-recheck.ts",
     "eval": "tsx scripts/run-eval.ts",
     "remap": "tsx scripts/offline-remap.ts",
-    "extract:local": "python -m ml.serve_extract"
+    "extract:local": "python -m ml.serve_extract",
+    "chem:local": "python -m ml.serve_chem"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

@@ -30,6 +30,13 @@ export const TOPIC_RULES: Array<{ name: string; re: RegExp }> = [
   { name: 'periodic', re: /periodic\s+table|atomic\s+number|group\s*=\s*\d|period\s*=\s*\d/ },
 ]
 
+/** Chemistry topics that trigger ChemVLM refinement (diagram/formula blocks). */
+export const CHEMISTRY_TOPICS = new Set(['methanal', 'sodium', 'periodic', 'drycell'])
+
+export function hasChemistryTopic(block: ExtractedBlock | string): boolean {
+  return topicalHits(block).some((h) => CHEMISTRY_TOPICS.has(h))
+}
+
 export const STRONG_TOPICS = new Set([
   'ambedkar',
   'triangle',

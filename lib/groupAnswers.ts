@@ -1,3 +1,4 @@
+import { bboxesAreSpatiallySeparate } from './bboxRepair'
 import { inferContentKind } from './blockContent'
 import {
   looksLikeAmbedkar,
@@ -190,6 +191,17 @@ export function groupAnswersByLabel(blocks: ExtractedBlock[]): ExtractedBlock[] 
         labelWritten: block.labelWritten || strong,
         isStrikethrough: false,
       }
+      continue
+    }
+
+    if (
+      current &&
+      current.bbox &&
+      block.bbox &&
+      bboxesAreSpatiallySeparate(current.bbox, block.bbox)
+    ) {
+      groups.push(current)
+      current = { ...block }
       continue
     }
 

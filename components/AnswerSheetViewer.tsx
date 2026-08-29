@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { padBbox } from '@/lib/bboxRepair'
 import type { BBox, PageImage } from '@/lib/types'
 
 export function AnswerSheetViewer({
@@ -32,9 +33,9 @@ export function AnswerSheetViewer({
 
   const overlays = useMemo(() => {
     const result: BBox[] = []
-    if (highlight && highlightPageIndex === page) result.push(highlight)
+    if (highlight && highlightPageIndex === page) result.push(padBbox(highlight))
     for (const extra of extraHighlights ?? []) {
-      if (extra.pageIndex === page) result.push(extra.bbox)
+      if (extra.pageIndex === page) result.push(padBbox(extra.bbox))
     }
     return result
   }, [highlight, highlightPageIndex, extraHighlights, page])
