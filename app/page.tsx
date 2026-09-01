@@ -156,6 +156,7 @@ function MappingScreen({
           <QuestionList
             pairs={pairs}
             grades={grades}
+            summary={summary}
             selectedId={selectedId}
             onSelect={(pair) => {
               setSelectedId(pair.id)

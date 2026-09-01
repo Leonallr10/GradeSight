@@ -1,8 +1,10 @@
 'use client'
 
 import { useState } from 'react'
+import { Download, CheckCircle2 } from 'lucide-react'
 import { contentKindLabel } from '@/lib/blockContent'
-import type { ExtractedBlock, GradeResult, MappedPair } from '@/lib/types'
+import { generateEvaluationReportPdf } from '@/lib/generatePdf'
+import type { ExtractedBlock, GradeResult, GradingSummary, MappedPair } from '@/lib/types'
 
 function scoreLabel(grade?: GradeResult): string {
   if (!grade) return '— / —'
@@ -33,11 +35,13 @@ function BlockBody({ block }: { block: ExtractedBlock | null | undefined }) {
 export function QuestionList({
   pairs,
   grades,
+  summary,
   selectedId,
   onSelect,
 }: {
   pairs: MappedPair[]
   grades: GradeResult[]
+  summary?: GradingSummary | null
   selectedId: string | null
   onSelect: (pair: MappedPair) => void
 }) {
@@ -48,6 +52,8 @@ export function QuestionList({
   const [expanded, setExpanded] = useState<string[]>(() =>
     selectedId ? [selectedId] : [],
   )
+  const [downloading, setDownloading] = useState(false)
+  const [downloaded, setDownloaded] = useState(false)
 
   const allExpanded =
     questionPairs.length > 0 && questionPairs.every((p) => expanded.includes(p.id))
@@ -62,15 +68,55 @@ export function QuestionList({
     setExpanded(allExpanded ? [] : questionPairs.map((p) => p.id))
   }
 
+  const handleDownloadPdf = () => {
+    try {
+      setDownloading(true)
+      generateEvaluationReportPdf({
+        pairs,
+        grades,
+        summary: summary || null,
+        documentTitle: 'GradeSight Assessment & Feedback Report',
+      })
+      setDownloaded(true)
+      setTimeout(() => setDownloaded(false), 2500)
+    } catch (err) {
+      console.error('Failed to generate PDF:', err)
+      alert('Failed to generate PDF. Please try again.')
+    } finally {
+      setDownloading(false)
+    }
+  }
+
   return (
     <section className="question-panel">
       <div className="panel-title">
         <b>
           Extracted Questions <small>(from question paper)</small>
         </b>
-        <button type="button" onClick={expandAll}>
-          {allExpanded ? 'Collapse All' : 'Expand All'}
-        </button>
+        <div className="panel-actions">
+          <button type="button" onClick={expandAll}>
+            {allExpanded ? 'Collapse All' : 'Expand All'}
+          </button>
+          <button
+            type="button"
+            className="download-pdf-btn"
+            onClick={handleDownloadPdf}
+            disabled={downloading || questionPairs.length === 0}
+            title="Download Evaluated Questions and AI Feedback as PDF"
+          >
+            {downloaded ? (
+              <>
+                <CheckCircle2 size={12} />
+                <span>Downloaded</span>
+              </>
+            ) : (
+              <>
+                <Download size={12} />
+                <span>{downloading ? 'Exporting…' : 'Download PDF'}</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
       {questionPairs.map((pair, idx) => {
         const grade = gradeMap.get(pair.id)
