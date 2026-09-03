@@ -33,9 +33,11 @@ export async function POST(req: Request) {
   try {
     const json = await req.json()
     const body = bodySchema.parse(json)
+    const customToken = req.headers.get('x-hf-token')?.trim() || undefined
     const pairs = (await repairMappedPairBboxes(
       body.pairs as MappedPair[],
       body.pages as PageImage[],
+      customToken,
     )) as MappedPair[]
     return NextResponse.json({ pairs })
   } catch (err) {

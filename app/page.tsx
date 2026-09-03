@@ -5,7 +5,7 @@ import { AnswerSheetViewer } from '@/components/AnswerSheetViewer'
 import { GradingSummaryBar } from '@/components/GradingSummary'
 import { ProgressStepper } from '@/components/ProgressStepper'
 import { QuestionList } from '@/components/QuestionList'
-import { Sidebar, Topbar, UploadScreen } from '@/components/UploadScreen'
+import { Topbar, UploadScreen } from '@/components/UploadScreen'
 import { rasterizeFile } from '@/lib/pdf-rasterize'
 import { dedupeNearDuplicatePages } from '@/lib/dedupePages'
 import type {
@@ -17,12 +17,35 @@ import type {
   PipelineStage,
 } from '@/lib/types'
 
+import { KeyRound } from 'lucide-react'
+
 type FileKind = 'question' | 'answer'
 
+function getStoredHfToken(): string | null {
+  if (typeof window === 'undefined') return null
+  return (
+    localStorage.getItem('gradesight_hf_token') ||
+    localStorage.getItem('HF_TOKEN') ||
+    null
+  )
+}
+
+function isHfKeyError(msg: string): boolean {
+  return /HF 429|HF 402|HF 401|HF 403|rate limit|credits depleted|credits exhausted|quota exceeded|quota or credits|invalid token|insufficient permissions|Inference Providers|HF_TOKEN is not set/i.test(
+    msg,
+  )
+}
+
 async function postJson<T>(url: string, body: unknown): Promise<T> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  const hfToken = getStoredHfToken()
+  if (hfToken) {
+    headers['x-hf-token'] = hfToken
+  }
+
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify(body),
   })
   const data = await res.json().catch(() => ({}))
@@ -32,15 +55,56 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
         'Upload payload too large for the server (Vercel limit ~4.5MB per request). Use fewer pages, smaller PDFs, or re-deploy after the latest fix.',
       )
     }
-    const msg = data?.error || `Request failed: ${url}`
-    if (/403|insufficient permissions|Inference Providers on behalf/i.test(String(msg))) {
-      throw new Error(
-        `${msg} Create a fine-grained HF token with "Make calls to Inference Providers" at huggingface.co/settings/tokens and update HF_TOKEN in .env.local.`,
-      )
+    let msg = data?.error || `Request failed: ${url}`
+    if (/429|rate.?limit|too many requests/i.test(String(msg))) {
+      msg = `HF API Rate Limit Reached: Your Hugging Face token has hit its request limit. Please update your HF API Key in the top header to continue.`
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('gradesight:hf-key-error', {
+            detail: { message: msg },
+          }),
+        )
+      }
+      throw new Error(msg)
     }
-    if (/402|depleted|credits|quota|billing/i.test(String(msg))) {
-      throw new Error(
-        `${msg} Add HF Inference credits at huggingface.co/settings/billing, or enable legacy local extract (USE_LEGACY_LOCAL_EXTRACT=1 + LOCAL_EXTRACT_URL).`,
+    if (/402|depleted|credits|quota|billing|RESOURCE_EXHAUSTED/i.test(String(msg))) {
+      msg = `HF Credits Depleted: Hugging Face inference quota or credits are exhausted. Please update your API key in the top header or add credits at huggingface.co/settings/billing.`
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('gradesight:hf-key-error', {
+            detail: { message: msg },
+          }),
+        )
+      }
+      throw new Error(msg)
+    }
+    if (/401|invalid token|token expired|unauthorized/i.test(String(msg))) {
+      msg = `HF Token Expired/Invalid: Your Hugging Face API key is invalid or has expired. Please configure a valid key in the top header.`
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('gradesight:hf-key-error', {
+            detail: { message: msg },
+          }),
+        )
+      }
+      throw new Error(msg)
+    }
+    if (/403|insufficient permissions|Inference Providers on behalf/i.test(String(msg))) {
+      msg = `HF Token Permission Issue: Create a fine-grained token with "Make calls to Inference Providers" at huggingface.co/settings/tokens and update your HF Key in the top header.`
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('gradesight:hf-key-error', {
+            detail: { message: msg },
+          }),
+        )
+      }
+      throw new Error(msg)
+    }
+    if (isHfKeyError(String(msg)) && typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('gradesight:hf-key-error', {
+          detail: { message: String(msg) },
+        }),
       )
     }
     throw new Error(msg)
@@ -208,6 +272,22 @@ export default function Page() {
     setError(null)
     setDedupeWarning(null)
 
+    const userToken = getStoredHfToken()
+    if (!userToken || !userToken.trim()) {
+      const msg =
+        'Please enter your Hugging Face API Key in the top header (HF Key) before starting.'
+      setError(msg)
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('gradesight:hf-key-error', {
+            detail: { message: msg },
+          }),
+        )
+        window.dispatchEvent(new CustomEvent('gradesight:open-hf-settings'))
+      }
+      return
+    }
+
     try {
       setStage('uploading')
       setStatusMessage('Rasterizing PDF/image pages…')
@@ -292,7 +372,15 @@ export default function Page() {
       setStatusMessage('')
     } catch (err) {
       console.error(err)
-      setError(err instanceof Error ? err.message : 'Pipeline failed')
+      const message = err instanceof Error ? err.message : 'Pipeline failed'
+      setError(message)
+      if (isHfKeyError(message) && typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('gradesight:hf-key-error', {
+            detail: { message },
+          }),
+        )
+      }
       setStage('error')
     }
   }, [files.question, files.answer])
@@ -337,6 +425,18 @@ export default function Page() {
           <button className="primary" onClick={back}>
             Back to upload
           </button>
+          <button
+            type="button"
+            className="secondary btn-update-hf-key"
+            onClick={() => {
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('gradesight:open-hf-settings'))
+              }
+            }}
+          >
+            <KeyRound size={15} />
+            <span>Configure / Update HF Key</span>
+          </button>
         </div>
       )}
       {dedupeWarning && (showMapping || showProcessing) && (
@@ -355,25 +455,13 @@ export default function Page() {
     </>
   )
 
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-
   return (
-    <main className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
-      <div className={`desktop-side ${sidebarCollapsed ? 'narrow' : ''}`}>
-        <Sidebar
-          collapsed={sidebarCollapsed}
-          onToggle={() => setSidebarCollapsed((v) => !v)}
-        />
-      </div>
+    <main className="app-shell full-width">
       <div className="workspace">
-        <Topbar onBack={back} />
+        <Topbar onBack={back} showBack={stage !== 'upload'} />
         <div className="workspace-content">
           {workspace}
         </div>
-      </div>
-      <div className="mobile-workspace">
-        <Topbar mobile onBack={back} />
-        {workspace}
       </div>
     </main>
   )

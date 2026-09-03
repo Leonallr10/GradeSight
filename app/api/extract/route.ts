@@ -25,7 +25,8 @@ export async function POST(req: Request) {
     const json = await req.json()
     const body = bodySchema.parse(json)
     const pages = body.pages as PageImage[]
-    const blocks = await extractDocument(pages, body.role)
+    const customToken = req.headers.get('x-hf-token')?.trim() || undefined
+    const blocks = await extractDocument(pages, body.role, customToken)
     return NextResponse.json({
       blocks,
       via: extractMode(),

@@ -31,10 +31,12 @@ export async function POST(req: Request) {
     const { valid, invalid } = partitionByBbox(blocks)
     let repaired: ExtractedBlock[] = invalid
 
-    if (invalid.length > 0 && process.env.HF_TOKEN) {
+    const customToken = req.headers.get('x-hf-token')?.trim() || undefined
+
+    if (invalid.length > 0 && customToken) {
       try {
         const { repairBlocksWithHf } = await import('@/lib/hf-qwen')
-        repaired = await repairBlocksWithHf(invalid, pages)
+        repaired = await repairBlocksWithHf(invalid, pages, customToken)
       } catch (err) {
         console.warn('HF bbox repair skipped:', err)
         repaired = invalid

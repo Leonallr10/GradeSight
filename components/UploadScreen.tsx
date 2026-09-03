@@ -154,7 +154,28 @@ export function UploadScreen({
         <button className="primary" disabled={!filled} onClick={onStart}>
           Start Mapping <span>→</span>
         </button>
-        {error && <p className="upload-error">{error}</p>}
+        {error && (
+          <div className="upload-error-box">
+            <p className="upload-error">{error}</p>
+            {/hf|hugging.?face|token|key|limit|credit|quota|unauthorized|401|402|403|429/i.test(
+              error,
+            ) && (
+              <button
+                type="button"
+                className="btn-link-update-key"
+                onClick={() => {
+                  if (typeof window !== 'undefined') {
+                    window.dispatchEvent(
+                      new CustomEvent('gradesight:open-hf-settings'),
+                    )
+                  }
+                }}
+              >
+                <span>Update Hugging Face API Key</span> →
+              </button>
+            )}
+          </div>
+        )}
         <p className="hint">
           Once both files are uploaded, you&apos;ll be able to map answers with questions
         </p>
@@ -249,49 +270,52 @@ export function Sidebar({
   )
 }
 
+import { ApiKeyDropdown } from './ApiKeyDropdown'
+
 export function Topbar({
   mobile = false,
   onBack,
+  showBack = false,
 }: {
   mobile?: boolean
   onBack: () => void
+  showBack?: boolean
 }) {
   return (
     <header className={`topbar ${mobile ? 'mobile-topbar' : ''}`}>
-      <button className="back" aria-label="Go back" onClick={onBack}>
-        ‹
-      </button>
-      {!mobile && (
-        <>
+      <div className="topbar-left">
+        {showBack ? (
+          <button className="back" aria-label="Go back" onClick={onBack}>
+            ‹
+          </button>
+        ) : null}
+        <div className="topbar-brand">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/icons/exam.png" alt="" className="nav-asset sm" />
-          <span className="muted">Exams</span>
-        </>
-      )}
-      {mobile && (
-        <strong className="mobile-brand">
-          <span className="brand-mark sm">V</span> VedaAI
-        </strong>
-      )}
+          <img src="/icons/logo.png" alt="GradeSight logo" className="topbar-logo" />
+          <strong className="topbar-title">GradeSight</strong>
+          <span className="topbar-tag">AI Evaluator</span>
+        </div>
+      </div>
+
       <div className="top-actions">
+        <ApiKeyDropdown />
         {!mobile && (
-          <span className="top-help" aria-label="Help">
+          <span className="top-help" aria-label="Help" title="Help & Documentation">
             <FaRegQuestionCircle size={16} />
           </span>
         )}
-        <span className="bell" aria-label="Notifications">
+        <span className="bell" aria-label="Notifications" title="Notifications">
           <IoMdNotificationsOutline size={18} />
           <i />
         </span>
         {!mobile && (
-          <span className="top-spark" aria-label="AI">
+          <span className="top-spark" aria-label="AI Features" title="AI Powered Evaluation">
             <Sparkles size={15} />
           </span>
         )}
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/profile.png" alt="" className="avatar-img" />
-        {!mobile && <span className="user">Madhur Rastogi ⌄</span>}
-        {mobile && <span className="menu">≡</span>}
+        <img src="/profile.png" alt="User profile" className="avatar-img" />
+        {!mobile && <span className="user">Teacher Portal</span>}
       </div>
     </header>
   )

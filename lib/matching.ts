@@ -27,7 +27,7 @@ import type { ExtractedBlock, MappedPair } from './types'
 /** Fail safe: below this, leave unmatched rather than force a wrong grade. */
 export const SEMANTIC_MATCH_THRESHOLD = 0.72
 
-export type EmbedFn = (texts: string[]) => Promise<number[][]>
+export type EmbedFn = (texts: string[]) => Promise<number[][]> | number[][]
 
 export function preferLeafBlocks(blocks: ExtractedBlock[]): ExtractedBlock[] {
   const norms = blocks.map((b) => normalizeLabel(b.labelNumber || b.labelWritten))

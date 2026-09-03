@@ -113,3 +113,14 @@ export function isProviderPermissionError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err)
   return /403|insufficient permissions|Inference Providers on behalf/i.test(msg)
 }
+
+export function isProviderRateLimitError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err)
+  return /429|rate.?limit|too many requests|request limit exceeded|throughput/i.test(msg)
+}
+
+export function isProviderAuthError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err)
+  return /401|invalid token|token expired|unauthorized|bad token/i.test(msg)
+}
+

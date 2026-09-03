@@ -1,7 +1,15 @@
 import { InferenceClient } from '@huggingface/inference'
 import { coerceBbox } from './bboxCheck'
 import { blockContentForModel } from './blockContent'
-import { EXTRACT_PROMPT, extractRoleHint, isProviderCreditError, isProviderPermissionError, SUPPLEMENT_MISSED_ANSWERS_HINT } from './extractPrompt'
+import {
+  EXTRACT_PROMPT,
+  extractRoleHint,
+  isProviderAuthError,
+  isProviderCreditError,
+  isProviderPermissionError,
+  isProviderRateLimitError,
+  SUPPLEMENT_MISSED_ANSWERS_HINT,
+} from './extractPrompt'
 import { filterExtractedBlocks } from './filterExamBlocks'
 import { normalizeLabel } from './normalizeLabel'
 import { extractJsonPayload, parseExtractedBlocks } from './parseExtract'
@@ -10,10 +18,12 @@ import type { BBox, DocumentRole, ExtractedBlock, PageImage } from './types'
 /** Default VL model — append `:provider` (e.g. `:novita`) per HF Inference Providers settings. */
 const DEFAULT_VL_MODEL = 'meta-llama/Llama-4-Scout-17B-16E-Instruct:novita'
 
-function getClient() {
-  const token = process.env.HF_TOKEN
+function getClient(customToken?: string) {
+  const token = customToken?.trim()
   if (!token) {
-    throw new Error('HF_TOKEN is not set')
+    throw new Error(
+      'Hugging Face API key is required. Please enter your Hugging Face API key in the top header (HF Key) before continuing.',
+    )
   }
   return new InferenceClient(token)
 }
@@ -51,21 +61,28 @@ function hfErrorMessage(err: unknown): string {
 }
 
 function formatHfExtractError(detail: string, model: string): string {
-  if (isProviderPermissionError(detail)) {
-    return `${detail} (model=${model}). Create a fine-grained token at huggingface.co/settings/tokens with "Make calls to Inference Providers" enabled, then update HF_TOKEN in .env.local.`
+  if (isProviderRateLimitError(detail)) {
+    return `HF 429 Rate Limit Reached: Hugging Face API rate limit exceeded. Please configure a new Hugging Face API key in the top header or wait for the limit to reset.`
   }
   if (isProviderCreditError(detail)) {
-    return `${detail} (model=${model}). Hugging Face Inference credits are exhausted — add credits at huggingface.co/settings/billing, or enable legacy local extract (USE_LEGACY_LOCAL_EXTRACT=1 + LOCAL_EXTRACT_URL).`
+    return `HF 402 Credits Exhausted: Hugging Face inference quota or credits are depleted. Please update your API key in the top header or add credits at huggingface.co/settings/billing.`
   }
-  return `${detail} (model=${model}). Check HF_TOKEN and HF_QWEN_MODEL, or enable a VL provider for this model in Hugging Face settings.`
+  if (isProviderAuthError(detail)) {
+    return `HF 401 Invalid Token: Your Hugging Face API key is invalid or has expired. Please configure a valid token in the top header.`
+  }
+  if (isProviderPermissionError(detail)) {
+    return `HF 403 Permission Denied: Token lacks Inference Provider access. Create a fine-grained token at huggingface.co/settings/tokens with "Make calls to Inference Providers" enabled, then update HF Key in the top header.`
+  }
+  return `${detail} (model=${model}). Check your Hugging Face API key or network connection.`
 }
 
 export async function extractPageWithQwen(
   page: PageImage,
   role: DocumentRole,
   idPrefix: string,
+  customToken?: string,
 ): Promise<ExtractedBlock[]> {
-  const client = getClient()
+  const client = getClient(customToken)
   const model = getModel()
   const { mime, data } = stripDataUrl(page.imageBase64)
 
@@ -174,13 +191,14 @@ async function supplementPageShortAnswers(
   page: PageImage,
   existingOnPage: ExtractedBlock[],
   idPrefix: string,
+  customToken?: string,
 ): Promise<ExtractedBlock[]> {
   const pageLabels = labelsOnPage(existingOnPage, page.pageIndex)
   if (!pageNeedsShortAnswerSupplement(pageLabels, existingOnPage, page.pageIndex)) {
     return []
   }
 
-  const client = getClient()
+  const client = getClient(customToken)
   const model = getModel()
   const { mime, data } = stripDataUrl(page.imageBase64)
   const have = [...pageLabels].sort().join(', ') || 'none'
@@ -229,16 +247,17 @@ async function supplementPageShortAnswers(
 export async function extractDocument(
   pages: PageImage[],
   role: DocumentRole,
+  customToken?: string,
 ): Promise<ExtractedBlock[]> {
   const all: ExtractedBlock[] = []
   const prefix = role === 'question' ? 'q' : 'a'
   const supplement = role === 'answer' && process.env.EXTRACT_SUPPLEMENT !== '0'
 
   for (const page of pages) {
-    const blocks = await extractPageWithQwen(page, role, prefix)
+    const blocks = await extractPageWithQwen(page, role, prefix, customToken)
     all.push(...blocks)
     if (supplement) {
-      const extra = await supplementPageShortAnswers(page, all, prefix)
+      const extra = await supplementPageShortAnswers(page, all, prefix, customToken)
       if (extra.length) {
         console.info(
           `[extract] supplement page ${page.pageIndex}: +${extra.length} (${extra.map((b) => b.labelNumber || b.labelWritten).join(', ')})`,
@@ -260,8 +279,9 @@ export async function localizeBboxWithHf(
   page: PageImage,
   text: string,
   labelHint?: string,
+  customToken?: string,
 ): Promise<BBox | null> {
-  const client = getClient()
+  const client = getClient(customToken)
   const model = getModel()
   const { mime, data } = stripDataUrl(page.imageBase64)
 
@@ -296,6 +316,7 @@ export async function localizeBboxWithHf(
 export async function repairBlocksWithHf(
   blocks: ExtractedBlock[],
   pages: PageImage[],
+  customToken?: string,
 ): Promise<ExtractedBlock[]> {
   const pageMap = new Map(pages.map((p) => [p.pageIndex, p]))
   const repaired: ExtractedBlock[] = []
@@ -310,7 +331,7 @@ export async function repairBlocksWithHf(
     try {
       const content = blockContentForModel(block) || block.text
       const labelHint = block.labelNumber || block.labelWritten
-      const bbox = await localizeBboxWithHf(page, content, labelHint)
+      const bbox = await localizeBboxWithHf(page, content, labelHint, customToken)
       if (bbox) {
         repaired.push({ ...block, bbox, bboxSource: 'qwen' })
       } else {

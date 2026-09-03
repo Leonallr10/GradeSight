@@ -86,8 +86,9 @@ export function pageIndicesForPairBboxRepair(pairs: MappedPair[]): number[] {
 export async function repairMappedPairBboxes(
   pairs: MappedPair[],
   pages: PageImage[],
+  customToken?: string,
 ): Promise<MappedPair[]> {
-  if (!pages.length || !process.env.HF_TOKEN) return pairs
+  if (!pages.length || !customToken?.trim()) return pairs
 
   const toRepair: ExtractedBlock[] = []
   const seen = new Set<string>()
@@ -108,7 +109,7 @@ export async function repairMappedPairBboxes(
 
   try {
     const { repairBlocksWithHf } = await import('./hf-qwen')
-    const repaired = await repairBlocksWithHf(toRepair, pages)
+    const repaired = await repairBlocksWithHf(toRepair, pages, customToken)
     const byId = new Map(repaired.map((b) => [b.id, b]))
     return pairs.map((pair) => {
       if (!pair.answer) return pair

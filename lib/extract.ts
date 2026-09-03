@@ -20,13 +20,14 @@ export function useLegacyLocalExtract(): boolean {
 export async function extractDocument(
   pages: PageImage[],
   role: DocumentRole,
+  customToken?: string,
 ): Promise<ExtractedBlock[]> {
   let blocks: ExtractedBlock[]
   if (useLegacyLocalExtract()) {
     blocks = await extractDocumentLocal(pages, role)
     blocks = filterExtractedBlocks(blocks, role)
   } else {
-    blocks = await extractWithHf(pages, role)
+    blocks = await extractWithHf(pages, role, customToken)
   }
   return enrichChemistryBlocks(blocks, pages)
 }
